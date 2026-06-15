@@ -1,10 +1,10 @@
 # Cursewords
 
-A Windows-first LAN desktop party game inspired by hidden forbidden-word clue games. This project uses original branding, original word decks, and original dungeon visuals.
+A LAN desktop party game inspired by hidden forbidden-word clue games. This project uses original branding, original word decks, and original dungeon visuals.
 
 ## Requirements
 
-- Windows 10 or newer
+- Windows 10 or newer, or macOS on Intel/Apple Silicon
 - Node.js LTS with npm on PATH
 
 ## Development
@@ -14,7 +14,7 @@ npm install
 npm run dev
 ```
 
-## Build A Windows Executable
+## Build A Windows App
 
 ```powershell
 npm install
@@ -27,9 +27,28 @@ The packaged output is written to `release/`:
 - `Cursewords-Setup-0.4.2-x64.exe`
 - `win-unpacked/`
 
+## Build A macOS App
+
+Build macOS packages on a Mac:
+
+```sh
+npm install
+npm run dist:mac
+```
+
+The packaged output is written to `release/`:
+
+- `Cursewords-0.4.2-x64.dmg`
+- `Cursewords-0.4.2-arm64.dmg`
+- `Cursewords-0.4.2-x64.zip`
+- `Cursewords-0.4.2-arm64.zip`
+- `latest-mac.yml`
+
+This simple macOS port is unsigned. macOS may show a Gatekeeper warning the first time the app is opened. A polished public release should use Apple Developer ID signing and notarization.
+
 ## Publish Updates
 
-Installed Windows builds use GitHub Releases for over-the-air updates through `electron-updater`. Portable builds are still useful for manual download, but the installed NSIS build is the reliable auto-update path.
+Installed Windows builds use GitHub Releases for over-the-air updates through `electron-updater`. Portable builds are still useful for manual download, but the installed NSIS build is the reliable Windows auto-update path. For the simple unsigned macOS port, distribute the `.dmg` manually until signing and notarization are configured.
 
 1. Set a GitHub token that can create releases for `ddroder/cursewords`.
 2. Run the publish script:
@@ -39,17 +58,17 @@ $env:GH_TOKEN="github_pat_or_token"
 npm run release
 ```
 
-The release upload includes the installer, portable executable, blockmaps, and update metadata such as `latest.yml`. Packaged apps check for updates on launch/home/lobby screens and prompt users to download and restart when a new version is available.
+The Windows release upload includes the installer, portable app, blockmaps, and update metadata such as `latest.yml`. Packaged apps check for updates on launch/home/lobby screens and prompt users to download and restart when a new version is available.
 
 ## LAN Play
 
-1. One player launches the executable and clicks `Host LAN Delve`.
+1. One player launches the app and clicks `Host LAN Delve`.
 2. The host screen shows one or more LAN addresses like `192.168.1.20:4949`.
-3. Other players launch the executable, enter that address, and click `Join`.
+3. Other players launch the app, enter that address, and click `Join`.
 4. Players choose `Ember Guild` or `Frost Order`.
 5. The host starts the dungeon when both teams have players.
 
-Windows Firewall may ask for permission the first time the host starts a LAN server. Allow private-network access.
+Windows Firewall or macOS Local Network/Firewall may ask for permission the first time the host starts a LAN server. Allow local/private-network access.
 
 ## Custom Words
 
@@ -93,6 +112,12 @@ Run these after Node.js is installed:
 npm test
 npm run build
 npm run dist
+```
+
+On macOS, also run:
+
+```sh
+npm run dist:mac
 ```
 
 Verified in this workspace with a portable Node.js 20.15.1 toolchain:

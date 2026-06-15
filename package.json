@@ -2,7 +2,7 @@
   "name": "cursewords",
   "version": "0.4.2",
   "private": true,
-  "description": "A Windows-first LAN desktop word-trap party game.",
+  "description": "A LAN desktop word-trap party game.",
   "author": "ddroder",
   "main": "dist-electron/electron/main.js",
   "repository": {
@@ -19,7 +19,9 @@
     "build:electron": "tsc -p electron/tsconfig.json",
     "build": "npm run build:renderer && npm run build:electron",
     "dist": "npm run build && electron-builder --win nsis portable",
+    "dist:mac": "npm run build && electron-builder --mac --x64 --arm64",
     "release": "npm run build && electron-builder --win nsis portable --publish always",
+    "release:mac": "npm run build && electron-builder --mac --x64 --arm64 --publish always",
     "test": "vitest run"
   },
   "dependencies": {
@@ -60,6 +62,26 @@
       "package.json"
     ],
     "asar": true,
+    "mac": {
+      "category": "public.app-category.games",
+      "artifactName": "${productName}-${version}-${arch}.${ext}",
+      "target": [
+        {
+          "target": "dmg",
+          "arch": [
+            "x64",
+            "arm64"
+          ]
+        },
+        {
+          "target": "zip",
+          "arch": [
+            "x64",
+            "arm64"
+          ]
+        }
+      ]
+    },
     "win": {
       "signAndEditExecutable": false,
       "target": [

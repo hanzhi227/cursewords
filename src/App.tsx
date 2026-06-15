@@ -91,7 +91,7 @@ export default function App() {
 
   async function hostGame() {
     if (!window.cursewords) {
-      setNotice("Host mode requires the desktop executable.");
+      setNotice("Host mode requires the desktop app.");
       return;
     }
     setConnectionMode("connecting");
@@ -428,7 +428,7 @@ function Lobby(props: {
       <div className="lobby-card invite-card">
         <img src={doorUrl} alt="" />
         <h2>Gather the table</h2>
-        <p>Everyone opens the executable, clicks Join, and enters one of the host addresses below.</p>
+        <p>Everyone opens the app, clicks Join, and enters one of the host addresses below.</p>
         <div className="address-list">
           {(props.hostInfo?.addresses ?? ["Ask the host for their address"]).map((address) => (
             <code key={address}>{address}</code>
