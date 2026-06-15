@@ -1,10 +1,9 @@
 {
   "name": "cursewords",
-  "version": "0.4.2",
+  "version": "0.5.0",
   "private": true,
-  "description": "A Windows-first LAN desktop word-trap party game.",
+  "description": "A browser-based party word-trap dungeon game.",
   "author": "ddroder",
-  "main": "dist-electron/electron/main.js",
   "repository": {
     "type": "git",
     "url": "git+ssh://git@github.com/ddroder/cursewords.git"
@@ -14,16 +13,17 @@
   },
   "homepage": "https://github.com/ddroder/cursewords#readme",
   "scripts": {
-    "dev": "node scripts/dev.mjs",
-    "build:renderer": "vite build",
-    "build:electron": "tsc -p electron/tsconfig.json",
-    "build": "npm run build:renderer && npm run build:electron",
-    "dist": "npm run build && electron-builder --win nsis portable",
-    "release": "npm run build && electron-builder --win nsis portable --publish always",
-    "test": "vitest run"
+    "dev": "concurrently -k \"npm:dev:server\" \"npm:dev:client\"",
+    "dev:client": "vite",
+    "dev:server": "tsx watch server/index.ts",
+    "build": "npm run build:client && npm run build:server",
+    "build:client": "vite build",
+    "build:server": "tsc -p server/tsconfig.json",
+    "start": "NODE_ENV=production node dist-server/server/index.js",
+    "test": "vitest run",
+    "test:smoke": "node scripts/smoke-test.mjs"
   },
   "dependencies": {
-    "electron-updater": "^6.8.9",
     "react": "^18.2.0",
     "react-dom": "^18.2.0",
     "socket.io": "^4.7.5",
@@ -34,47 +34,10 @@
     "@types/react": "^18.2.66",
     "@types/react-dom": "^18.2.22",
     "@vitejs/plugin-react": "^4.2.1",
-    "electron": "^30.0.8",
-    "electron-builder": "^24.13.3",
+    "concurrently": "^9.1.2",
+    "tsx": "^4.19.3",
     "typescript": "^5.4.5",
     "vite": "^5.2.11",
     "vitest": "^1.6.0"
-  },
-  "build": {
-    "appId": "com.ddroder.cursewords",
-    "productName": "Cursewords",
-    "directories": {
-      "output": "release"
-    },
-    "publish": [
-      {
-        "provider": "github",
-        "owner": "ddroder",
-        "repo": "cursewords",
-        "releaseType": "release"
-      }
-    ],
-    "files": [
-      "dist/**/*",
-      "dist-electron/**/*",
-      "package.json"
-    ],
-    "asar": true,
-    "win": {
-      "signAndEditExecutable": false,
-      "target": [
-        "nsis",
-        "portable"
-      ]
-    },
-    "nsis": {
-      "artifactName": "${productName}-Setup-${version}-${arch}.${ext}",
-      "oneClick": false,
-      "perMachine": false,
-      "allowToChangeInstallationDirectory": true
-    },
-    "portable": {
-      "artifactName": "${productName}-Portable-${version}-${arch}.${ext}"
-    }
   }
 }

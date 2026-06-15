@@ -19,6 +19,11 @@ export interface HostStartResult {
   addresses: string[];
 }
 
+export interface RoomCreateResult {
+  roomCode: string;
+  hostToken: string;
+}
+
 export interface ClientActionResult {
   ok: boolean;
   error?: string;
