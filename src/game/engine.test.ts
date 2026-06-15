@@ -132,6 +132,37 @@ describe("GameEngine", () => {
     expect(engine.snapshot().lobbyReadyByPlayer.host).toBe(false);
   });
 
+  it("removes players from the roster when they leave in the lobby", () => {
+    const engine = new GameEngine();
+    engine.joinPlayer("host", "Host", true);
+    engine.joinPlayer("guest", "Guest", false);
+    engine.chooseTeam("guest", "frost");
+    engine.setLobbyReady("guest", true);
+
+    engine.disconnectPlayer("guest");
+
+    expect(engine.snapshot().players.map((player) => player.name)).toEqual(["Host"]);
+    expect(engine.snapshot().lobbyReadyByPlayer.guest).toBeUndefined();
+  });
+
+  it("keeps in-game disconnected players visible as offline", () => {
+    const engine = new GameEngine();
+    engine.joinPlayer("host", "Host", true);
+    engine.joinPlayer("guest", "Guest", false);
+    engine.chooseTeam("host", "ember");
+    engine.chooseTeam("guest", "frost");
+    readyPlayers(engine, ["host", "guest"]);
+    engine.startGame("host");
+
+    engine.disconnectPlayer("guest");
+
+    expect(engine.snapshot().players).toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({ name: "Guest", connected: false })
+      ])
+    );
+  });
+
   it("keeps team chat private during trap writing", () => {
     const engine = new GameEngine();
     engine.joinPlayer("host", "Host", true);
