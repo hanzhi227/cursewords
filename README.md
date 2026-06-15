@@ -23,8 +23,8 @@ npm run dist
 
 The packaged output is written to `release/`:
 
-- `Cursewords-Portable-0.4.4-x64.exe`
-- `Cursewords-Setup-0.4.4-x64.exe`
+- `Cursewords-Portable-0.4.5-x64.exe`
+- `Cursewords-Setup-0.4.5-x64.exe`
 - `win-unpacked/`
 
 ## Build A macOS App
@@ -38,10 +38,10 @@ npm run dist:mac
 
 The packaged output is written to `release/`:
 
-- `Cursewords-0.4.4-x64.dmg`
-- `Cursewords-0.4.4-arm64.dmg`
-- `Cursewords-0.4.4-x64.zip`
-- `Cursewords-0.4.4-arm64.zip`
+- `Cursewords-0.4.5-x64.dmg`
+- `Cursewords-0.4.5-arm64.dmg`
+- `Cursewords-0.4.5-x64.zip`
+- `Cursewords-0.4.5-arm64.zip`
 - `latest-mac.yml`
 
 This simple macOS port is unsigned. macOS may show a Gatekeeper warning the first time the app is opened. A polished public release should use Apple Developer ID signing and notarization.
