@@ -73,11 +73,21 @@ export interface AttemptSummary {
   resolvedAt: number;
 }
 
+export interface TeamMessage {
+  id: string;
+  playerId: string;
+  playerName: string;
+  team: TeamId;
+  text: string;
+  sentAt: number;
+}
+
 export interface PublicRoundState {
   index: number;
   trapLimitForTeam: Record<TeamId, number>;
   clueGivers: Partial<Record<TeamId, string>>;
   trapSubmittedByTeam: Record<TeamId, boolean>;
+  turnReadyByTeam: Record<TeamId, boolean>;
   activeTeam?: TeamId;
   nextTeam?: TeamId;
   deadline?: number;
@@ -97,6 +107,7 @@ export interface PublicGameState {
   teams: Record<TeamId, TeamState>;
   rooms: RoomCard[];
   round?: PublicRoundState;
+  lobbyReadyByPlayer: Record<string, boolean>;
   log: string[];
 }
 
@@ -111,6 +122,7 @@ export interface PrivateView {
   visibleTrapLimit?: number;
   draftTraps?: string[];
   submittedTraps?: string[];
+  teamMessages?: TeamMessage[];
 }
 
 export interface PlayerView {

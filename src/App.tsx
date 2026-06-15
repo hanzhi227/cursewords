@@ -1,6 +1,6 @@
 import { useEffect, useMemo, useRef, useState } from "react";
 import { io, type Socket } from "socket.io-client";
-import type { AttemptResult, ClientActionResult, DeckMode, GameSetup, HostStartResult, Player, PlayerView, TeamId, UpdateStatus, WordSource } from "./shared/types";
+import type { AttemptResult, ClientActionResult, DeckMode, GameSetup, HostStartResult, Player, PlayerView, TeamId, TeamMessage, UpdateStatus, WordSource } from "./shared/types";
 import { TEAM_IDS } from "./shared/types";
 import torchUrl from "./assets/torch.svg";
 import bookUrl from "./assets/spellbook.svg";
@@ -412,9 +412,16 @@ function Lobby(props: {
 }) {
   const state = props.view.state;
   const playersByTeam = useMemo(() => groupPlayersByTeam(state.players), [state.players]);
+  const self = state.players.find((player) => player.id === props.view.private.playerId);
   const setup = buildGameSetup(props.deckMode, props.wordSource, props.customWordsText);
   const canUseDeck = canStartWithCustomWords(props.wordSource, props.customWordsText);
-  const startDisabled = !props.view.private.canHost || !canUseDeck;
+  const emberHasPlayers = playersByTeam.ember.some((player) => player.connected);
+  const frostHasPlayers = playersByTeam.frost.some((player) => player.connected);
+  const connectedTeamPlayers = state.players.filter((player) => player.connected && player.team);
+  const allTeamPlayersReady = connectedTeamPlayers.length > 0 && connectedTeamPlayers.every((player) => state.lobbyReadyByPlayer[player.id]);
+  const canStart = props.view.private.canHost && canUseDeck && emberHasPlayers && frostHasPlayers && allTeamPlayersReady;
+  const startDisabled = !canStart;
+  const selfReady = Boolean(self && state.lobbyReadyByPlayer[self.id]);
 
   return (
     <section className="lobby-grid">
@@ -434,6 +441,21 @@ function Lobby(props: {
             <button className="secondary-button" onClick={() => props.action("setName", { name: props.name })} type="button">Save</button>
           </div>
         </label>
+        <div className={`ready-self-card ${selfReady ? "ready" : ""}`}>
+          {self?.team ? (
+            <>
+              <div>
+                <strong>{selfReady ? "You are ready" : "Ready when you are"}</strong>
+                <span>{selfReady ? "The host can start once everyone is ready." : "Mark ready after joining a team."}</span>
+              </div>
+              <button className={selfReady ? "ghost-button" : "primary-button"} onClick={() => props.action("setLobbyReady", { ready: !selfReady })} type="button">
+                {selfReady ? "Not Ready" : "Ready"}
+              </button>
+            </>
+          ) : (
+            <span>Choose a team before readying up.</span>
+          )}
+        </div>
       </div>
 
       {TEAM_IDS.map((team) => (
@@ -445,7 +467,7 @@ function Lobby(props: {
             Join {TEAM_LABEL[team]}
           </button>
           <div className="player-stack">
-            {playersByTeam[team].map((player) => <PlayerBadge player={player} key={player.id} />)}
+            {playersByTeam[team].map((player) => <PlayerBadge player={player} ready={state.lobbyReadyByPlayer[player.id]} key={player.id} />)}
             {playersByTeam[team].length === 0 && <span className="empty-slot">No adventurers yet</span>}
           </div>
         </div>
@@ -454,7 +476,16 @@ function Lobby(props: {
       <div className="lobby-card start-card">
         <img src={trapUrl} alt="" />
         <h2>Host Controls</h2>
-        <p>Start when both teams have players. Real play is best with at least two per team.</p>
+        <p>Start when both teams have connected players and every teamed player is ready.</p>
+        <ReadyChecklist
+          items={[
+            { label: "Ember has players", done: emberHasPlayers },
+            { label: "Frost has players", done: frostHasPlayers },
+            { label: "Teamed players ready", done: allTeamPlayersReady },
+            { label: "Word deck valid", done: canUseDeck },
+            { label: "You are host", done: props.view.private.canHost }
+          ]}
+        />
         <button
           className="primary-button lobby-start-button"
           disabled={startDisabled}
@@ -545,6 +576,19 @@ function CustomWordsPanel(props: {
   );
 }
 
+function ReadyChecklist({ items }: { items: { label: string; done: boolean }[] }) {
+  return (
+    <div className="ready-checklist">
+      {items.map((item) => (
+        <div className={`ready-check ${item.done ? "done" : "pending"}`} key={item.label}>
+          <span>{item.done ? "Ready" : "Waiting"}</span>
+          <strong>{item.label}</strong>
+        </div>
+      ))}
+    </div>
+  );
+}
+
 function PhasePanel({ view, action }: { view: PlayerView; action: (event: string, payload?: unknown) => void }) {
   const { state } = view;
   if (!state.round) return null;
@@ -611,10 +655,10 @@ function TrapWriting({ view, action }: { view: PlayerView; action: (event: strin
   return (
     <section className="phase-card spellbook-card">
       <img className="phase-icon" src={bookUrl} alt="" />
-      <p className="eyebrow">Trap writing</p>
+      <p className="eyebrow">Team traps</p>
       {targetTeam ? (
         <>
-          <h2>Rig the word for {TEAM_LABEL[targetTeam]}</h2>
+          <h2>Team Traps for {TEAM_LABEL[targetTeam]}</h2>
           <SecretWord word={view.private.visibleTarget} label="Their target word" />
           <p className="phase-copy">Build exactly {limit} shared traps with your team. Everyone on your team can add, edit, and remove traps before the book is sealed.</p>
           <div className="shared-trap-list">
@@ -663,6 +707,7 @@ function TrapWriting({ view, action }: { view: PlayerView; action: (event: strin
             </div>
           )}
           <div className="trap-meter"><span>{traps.length}</span> / {limit} shared traps ready</div>
+          <TeamChat messages={view.private.teamMessages ?? []} action={action} />
           <button
             className="primary-button"
             disabled={submitted || traps.length !== limit}
@@ -683,10 +728,56 @@ function TrapWriting({ view, action }: { view: PlayerView; action: (event: strin
   );
 }
 
+function TeamChat({ messages, action }: { messages: TeamMessage[]; action: (event: string, payload?: unknown) => void }) {
+  const [draft, setDraft] = useState("");
+  const text = cleanMessageInput(draft);
+
+  function send() {
+    if (!text) return;
+    action("sendTeamMessage", { text });
+    setDraft("");
+  }
+
+  return (
+    <section className="team-chat-panel">
+      <div className="team-chat-heading">
+        <strong>Team Chat</strong>
+        <span>Private during trap writing</span>
+      </div>
+      <div className="team-chat-log">
+        {messages.map((message) => (
+          <p key={message.id}>
+            <strong>{message.playerName}</strong>
+            <span>{message.text}</span>
+          </p>
+        ))}
+        {messages.length === 0 && <p className="empty-slot">No team messages yet.</p>}
+      </div>
+      <div className="team-chat-compose">
+        <input
+          value={draft}
+          onChange={(event) => setDraft(event.target.value)}
+          onKeyDown={(event) => {
+            if (event.key === "Enter") send();
+          }}
+          maxLength={160}
+          placeholder="Message your team"
+        />
+        <button className="secondary-button" disabled={!text} onClick={send} type="button">Send</button>
+      </div>
+    </section>
+  );
+}
+
 function BetweenTurns({ view, action }: { view: PlayerView; action: (event: string, payload?: unknown) => void }) {
-  const nextTeam = view.state.round?.nextTeam;
-  const clueGiver = nextTeam ? findPlayer(view, view.state.round?.clueGivers[nextTeam]) : undefined;
+  const round = view.state.round;
+  const nextTeam = round?.nextTeam;
+  const clueGiver = nextTeam ? findPlayer(view, round?.clueGivers[nextTeam]) : undefined;
   const room = nextTeam ? view.state.rooms[Math.min(view.state.teams[nextTeam].progress, view.state.rooms.length - 1)] : undefined;
+  const turnReady = round?.turnReadyByTeam ?? { ember: false, frost: false };
+  const playerTeam = view.private.team;
+  const playerReady = playerTeam ? turnReady[playerTeam] : false;
+  const bothReady = turnReady.ember && turnReady.frost;
   return (
     <section className="phase-card">
       <img className="phase-icon" src={torchUrl} alt="" />
@@ -694,8 +785,24 @@ function BetweenTurns({ view, action }: { view: PlayerView; action: (event: stri
       <h2>{nextTeam ? `${TEAM_LABEL[nextTeam]} prepares to clue` : "Waiting"}</h2>
       <p className="phase-copy">Clue-giver: <strong>{clueGiver?.name ?? "No connected player"}</strong></p>
       {room && <p className="curse-line">Room curse: {room.curse}</p>}
+      <div className="turn-ready-panel">
+        <div className="turn-ready-grid">
+          {TEAM_IDS.map((team) => (
+            <div className={`turn-ready-card ${turnReady[team] ? "ready" : "pending"}`} key={team}>
+              <span>{TEAM_LABEL[team]}</span>
+              <strong>{turnReady[team] ? "Ready" : "Waiting"}</strong>
+            </div>
+          ))}
+        </div>
+        {playerTeam && (
+          <button className={playerReady ? "ghost-button" : "secondary-button"} onClick={() => action("setTurnReady", { ready: !playerReady })} type="button">
+            {playerReady ? "Not Ready" : "Ready for Clue"}
+          </button>
+        )}
+        {!bothReady && view.private.canHost && <p>Host override is available if the table is ready out loud.</p>}
+      </div>
       <button className="primary-button" disabled={!view.private.canHost || !nextTeam} onClick={() => action("beginClue", { team: nextTeam })} type="button">
-        Begin Clue Timer
+        {bothReady ? "Begin Clue Timer" : "Begin Anyway"}
       </button>
     </section>
   );
@@ -843,12 +950,13 @@ function EventLog({ log }: { log: string[] }) {
   );
 }
 
-function PlayerBadge({ player, active = false }: { player: Player; active?: boolean }) {
+function PlayerBadge({ player, active = false, ready }: { player: Player; active?: boolean; ready?: boolean }) {
   return (
     <div className={`player-badge ${player.connected ? "connected" : "offline"} ${active ? "active" : ""}`}>
       <span>{player.name}</span>
       {player.isHost && <em>host</em>}
       {active && <em>clue</em>}
+      {ready !== undefined && <em className={ready ? "ready" : "pending"}>{ready ? "ready" : "not ready"}</em>}
     </div>
   );
 }
@@ -916,6 +1024,10 @@ function normalizeAddress(address: string) {
 
 function cleanTrapInput(trap: string) {
   return trap.trim().replace(/\s+/g, " ").slice(0, 40);
+}
+
+function cleanMessageInput(message: string) {
+  return message.trim().replace(/\s+/g, " ").slice(0, 160);
 }
 
 function parseCustomWords(text: string) {

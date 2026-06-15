@@ -23,8 +23,8 @@ npm run dist
 
 The packaged output is written to `release/`:
 
-- `Cursewords-Portable-0.4.1-x64.exe`
-- `Cursewords-Setup-0.4.1-x64.exe`
+- `Cursewords-Portable-0.4.2-x64.exe`
+- `Cursewords-Setup-0.4.2-x64.exe`
 - `win-unpacked/`
 
 ## Publish Updates

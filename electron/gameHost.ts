@@ -77,6 +77,10 @@ export class GameHost {
         this.safeAction(socket, ack, (playerId) => this.engine.chooseTeam(playerId, payload.team));
       });
 
+      socket.on("setLobbyReady", (payload: { ready?: boolean } | undefined, ack?: Ack) => {
+        this.safeAction(socket, ack, (playerId) => this.engine.setLobbyReady(playerId, Boolean(payload?.ready)));
+      });
+
       socket.on("startGame", (payload: { settings?: GameSetup } | undefined, ack?: Ack) => {
         this.safeAction(socket, ack, (playerId) => this.engine.startGame(playerId, payload?.settings ?? {}));
       });
@@ -87,6 +91,14 @@ export class GameHost {
 
       socket.on("setTrapDraft", (payload: { traps: string[] }, ack?: Ack) => {
         this.safeAction(socket, ack, (playerId) => this.engine.setTrapDraft(playerId, Array.isArray(payload?.traps) ? payload.traps : []));
+      });
+
+      socket.on("sendTeamMessage", (payload: { text?: unknown } | undefined, ack?: Ack) => {
+        this.safeAction(socket, ack, (playerId) => this.engine.sendTeamMessage(playerId, payload?.text));
+      });
+
+      socket.on("setTurnReady", (payload: { ready?: boolean } | undefined, ack?: Ack) => {
+        this.safeAction(socket, ack, (playerId) => this.engine.setTurnReady(playerId, Boolean(payload?.ready)));
       });
 
       socket.on("beginClue", (payload: { team: unknown }, ack?: Ack) => {

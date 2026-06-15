@@ -12,6 +12,7 @@ import {
   type PublicGameState,
   type PublicRoundState,
   type TeamId,
+  type TeamMessage,
   type TeamState
 } from "../shared/types";
 
@@ -20,8 +21,10 @@ interface InternalRoundState {
   targetWords: Record<TeamId, string>;
   trapsForTeam: Record<TeamId, string[]>;
   draftTrapsForTeam: Record<TeamId, string[]>;
+  teamMessages: Record<TeamId, TeamMessage[]>;
   trapLimitForTeam: Record<TeamId, number>;
   trapSubmittedByTeam: Record<TeamId, boolean>;
+  turnReadyByTeam: Record<TeamId, boolean>;
   clueGivers: Partial<Record<TeamId, string>>;
   activeTeam?: TeamId;
   nextTeam?: TeamId;
@@ -37,9 +40,11 @@ interface InternalState {
   players: Player[];
   teams: Record<TeamId, TeamState>;
   round?: InternalRoundState;
+  lobbyReadyByPlayer: Record<string, boolean>;
   log: string[];
   usedWords: string[];
   customWords: string[];
+  messageCounter: number;
 }
 
 const DEFAULT_SETTINGS: GameSettings = {
@@ -81,6 +86,7 @@ export class GameEngine {
   disconnectPlayer(playerId: string) {
     const player = this.requirePlayer(playerId);
     player.connected = false;
+    this.state.lobbyReadyByPlayer[playerId] = false;
     this.log(`${player.name} disconnected.`);
   }
 
@@ -96,7 +102,15 @@ export class GameEngine {
     const player = this.requirePlayer(playerId);
     const team = parseTeam(rawTeam);
     player.team = team;
+    this.state.lobbyReadyByPlayer[player.id] = false;
     this.log(`${player.name} joined ${this.state.teams[team].name}.`);
+  }
+
+  setLobbyReady(playerId: string, ready: boolean) {
+    if (this.state.phase !== "lobby") throw new Error("Ready checks are only active in the lobby.");
+    const player = this.requirePlayer(playerId);
+    this.requireTeam(player);
+    this.state.lobbyReadyByPlayer[player.id] = Boolean(ready);
   }
 
   startGame(playerId: string, setup: GameSetup = {}) {
@@ -148,12 +162,42 @@ export class GameEngine {
     this.setTrapDraftForTeam(team, targetTeam, traps, false);
   }
 
+  sendTeamMessage(playerId: string, rawText: unknown) {
+    const player = this.requirePlayer(playerId);
+    const team = this.requireTeam(player);
+    const round = this.requireRound();
+    if (this.state.phase !== "trap-writing") throw new Error("Team chat is only active while writing traps.");
+
+    const text = cleanMessage(rawText);
+    if (!text) throw new Error("Message cannot be empty.");
+
+    this.state.messageCounter += 1;
+    const message: TeamMessage = {
+      id: `${round.index}-${team}-${this.state.messageCounter}`,
+      playerId: player.id,
+      playerName: player.name,
+      team,
+      text,
+      sentAt: Date.now()
+    };
+    round.teamMessages[team] = [...round.teamMessages[team], message].slice(-50);
+  }
+
+  setTurnReady(playerId: string, ready: boolean) {
+    const player = this.requirePlayer(playerId);
+    const team = this.requireTeam(player);
+    const round = this.requireRound();
+    if (this.state.phase !== "between-turns") throw new Error("Turn ready checks are only active between turns.");
+    round.turnReadyByTeam[team] = Boolean(ready);
+  }
+
   beginClue(playerId: string, rawTeam: unknown) {
     this.requireHost(playerId);
     const round = this.requireRound();
     const team = parseTeam(rawTeam);
     if (this.state.phase !== "between-turns") throw new Error("No team is waiting to begin a clue attempt.");
     if (team !== round.nextTeam) throw new Error("That team is not next.");
+    round.turnReadyByTeam = { ember: false, frost: false };
     round.activeTeam = team;
     round.nextTeam = undefined;
     round.startedAt = Date.now();
@@ -264,6 +308,7 @@ export class GameEngine {
     const waitingTeam = TEAM_IDS.find((teamId) => !round.attempts[teamId]);
     if (waitingTeam) {
       round.nextTeam = waitingTeam;
+      round.turnReadyByTeam = { ember: false, frost: false };
       this.state.phase = "between-turns";
       return;
     }
@@ -290,11 +335,13 @@ export class GameEngine {
       targetWords,
       trapsForTeam: { ember: [], frost: [] },
       draftTrapsForTeam: { ember: [], frost: [] },
+      teamMessages: { ember: [], frost: [] },
       trapLimitForTeam: {
         ember: this.currentRoomForTeam("ember").trapCount,
         frost: this.currentRoomForTeam("frost").trapCount
       },
       trapSubmittedByTeam: { ember: false, frost: false },
+      turnReadyByTeam: { ember: false, frost: false },
       clueGivers,
       attempts: {}
     };
@@ -346,6 +393,7 @@ export class GameEngine {
       teams: cloneTeams(this.state.teams),
       rooms: ROOMS,
       round: round ? this.publicRound(round) : undefined,
+      lobbyReadyByPlayer: { ...this.state.lobbyReadyByPlayer },
       log: [...this.state.log]
     };
   }
@@ -357,6 +405,7 @@ export class GameEngine {
       trapLimitForTeam: { ...round.trapLimitForTeam },
       clueGivers: { ...round.clueGivers },
       trapSubmittedByTeam: { ...round.trapSubmittedByTeam },
+      turnReadyByTeam: { ...round.turnReadyByTeam },
       activeTeam: round.activeTeam,
       nextTeam: round.nextTeam,
       deadline: round.deadline,
@@ -393,7 +442,8 @@ export class GameEngine {
         visibleTarget: round.targetWords[targetTeam],
         visibleTrapLimit: round.trapLimitForTeam[targetTeam],
         draftTraps: [...round.draftTrapsForTeam[targetTeam]],
-        submittedTraps: round.trapSubmittedByTeam[player.team] ? round.trapsForTeam[targetTeam] : []
+        submittedTraps: round.trapSubmittedByTeam[player.team] ? round.trapsForTeam[targetTeam] : [],
+        teamMessages: cloneMessages(round.teamMessages[player.team])
       };
     }
 
@@ -435,6 +485,11 @@ export class GameEngine {
     for (const team of TEAM_IDS) {
       const members = this.state.players.filter((player) => player.connected && player.team === team);
       if (members.length === 0) throw new Error(`${this.state.teams[team].name} needs at least one player.`);
+    }
+
+    for (const player of this.state.players) {
+      if (!player.connected || !player.team) continue;
+      if (!this.state.lobbyReadyByPlayer[player.id]) throw new Error(`${player.name} is not ready.`);
     }
   }
 
@@ -513,9 +568,11 @@ export class GameEngine {
           clueRotation: 0
         }
       },
+      lobbyReadyByPlayer: {},
       log: [],
       usedWords: [],
-      customWords
+      customWords,
+      messageCounter: 0
     };
   }
 
@@ -534,6 +591,11 @@ function cleanName(name?: string) {
 
 function cleanTrap(trap?: string) {
   return (trap ?? "").trim().replace(/\s+/g, " ").slice(0, 40) || undefined;
+}
+
+function cleanMessage(message: unknown) {
+  if (typeof message !== "string") return "";
+  return message.trim().replace(/\s+/g, " ").slice(0, 160);
 }
 
 function normalizeTraps(traps: string[]) {
@@ -601,4 +663,8 @@ function cloneAttempts(attempts: Partial<Record<TeamId, AttemptSummary>>): Parti
     ...(attempts.ember ? { ember: { ...attempts.ember } } : {}),
     ...(attempts.frost ? { frost: { ...attempts.frost } } : {})
   };
+}
+
+function cloneMessages(messages: TeamMessage[]) {
+  return messages.map((message) => ({ ...message }));
 }
