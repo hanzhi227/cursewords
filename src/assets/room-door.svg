@@ -1,0 +1,6 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 128 128" role="img" aria-label="Dungeon door">
+  <path d="M28 114V52c0-24 15-38 36-38s36 14 36 38v62H28Z" fill="#2A1B32" stroke="#F5C86A" stroke-width="6"/>
+  <path d="M42 114V55c0-15 9-24 22-24s22 9 22 24v59H42Z" fill="#3A2346" stroke="#8A6038" stroke-width="5"/>
+  <path d="M64 31v83M43 62h42M43 84h42" stroke="#8A6038" stroke-width="4"/>
+  <circle cx="74" cy="76" r="5" fill="#66D9FF"/>
+</svg>

@@ -1,0 +1,11 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 320 220" role="img" aria-label="Mimic Hall">
+  <rect width="320" height="220" rx="28" fill="#ffd4df"/>
+  <path d="M33 170c41-28 75-30 104-6 32 26 73 22 124-12 13-9 24-12 34-9v77H33v-50Z" fill="#7353a8"/>
+  <path d="M66 77h188c9 0 16 7 16 16v54c0 21-17 38-38 38H88c-21 0-38-17-38-38V93c0-9 7-16 16-16Z" fill="#b77242" stroke="#2b2140" stroke-width="8"/>
+  <path d="M80 77V56c0-12 10-22 22-22h116c12 0 22 10 22 22v21" fill="#d88a4d" stroke="#2b2140" stroke-width="8"/>
+  <circle cx="113" cy="118" r="13" fill="#ffe08a" stroke="#2b2140" stroke-width="6"/>
+  <circle cx="207" cy="118" r="13" fill="#ffe08a" stroke="#2b2140" stroke-width="6"/>
+  <path d="M118 155c25 15 56 15 84 0" stroke="#2b2140" stroke-width="8" stroke-linecap="round"/>
+  <path d="M139 157v20M162 161v22M185 157v20" stroke="#fff4d2" stroke-width="6" stroke-linecap="round"/>
+  <path d="M54 96 30 82M266 96l24-14" stroke="#2b2140" stroke-width="8" stroke-linecap="round"/>
+</svg>

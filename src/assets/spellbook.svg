@@ -1,0 +1,6 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 128 128" role="img" aria-label="Spellbook">
+  <path d="M20 24c22-8 35-2 44 8 9-10 22-16 44-8v78c-22-8-35-2-44 8-9-10-22-16-44-8V24Z" fill="#3A2346" stroke="#F5C86A" stroke-width="5"/>
+  <path d="M64 32v78" stroke="#F5C86A" stroke-width="4"/>
+  <path d="M32 42c12-2 19 0 25 5M32 58c12-2 19 0 25 5M32 74c12-2 19 0 25 5M72 47c7-5 14-7 25-5M72 63c7-5 14-7 25-5M72 79c7-5 14-7 25-5" stroke="#D9C38A" stroke-width="4" stroke-linecap="round"/>
+  <path d="M64 49 70 62l14 2-10 10 3 14-13-7-13 7 3-14-10-10 14-2 6-13Z" fill="#66D9FF" opacity="0.9"/>
+</svg>

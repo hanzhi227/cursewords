@@ -1,0 +1,13 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 320 220" role="img" aria-label="The Lockjaw Wyrm">
+  <rect width="320" height="220" rx="28" fill="#6dd9d0"/>
+  <path d="M31 177c39-25 79-26 119-3 42 24 86 21 132-9v55H31v-43Z" fill="#4fa66f"/>
+  <path d="M62 129c0-48 42-86 98-86s98 38 98 86v31c0 23-18 41-41 41H103c-23 0-41-18-41-41v-31Z" fill="#9d5bb4" stroke="#2b2140" stroke-width="9"/>
+  <path d="M81 91 50 57M239 91l31-34" stroke="#ff8a3d" stroke-width="10" stroke-linecap="round"/>
+  <circle cx="119" cy="117" r="18" fill="#ffe08a" stroke="#2b2140" stroke-width="7"/>
+  <circle cx="201" cy="117" r="18" fill="#ffe08a" stroke="#2b2140" stroke-width="7"/>
+  <circle cx="124" cy="120" r="7" fill="#2b2140"/>
+  <circle cx="196" cy="120" r="7" fill="#2b2140"/>
+  <path d="M108 158c34 21 70 21 104 0" stroke="#2b2140" stroke-width="9" stroke-linecap="round"/>
+  <path d="M120 159v25M144 166v28M176 166v28M200 159v25" stroke="#fff4d2" stroke-width="7" stroke-linecap="round"/>
+  <path d="M96 58c24-39 48-39 72 0 18-24 38-25 60-3" fill="none" stroke="#2b2140" stroke-width="7" stroke-linecap="round" opacity=".32"/>
+</svg>

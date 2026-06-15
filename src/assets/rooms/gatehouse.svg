@@ -1,0 +1,12 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 320 220" role="img" aria-label="Gatehouse of Grins">
+  <rect width="320" height="220" rx="28" fill="#8bd7ff"/>
+  <path d="M0 158c39-20 78-24 118-10 45 16 83 13 122-10 32-19 58-19 80-6v88H0v-62Z" fill="#7bcf89"/>
+  <path d="M44 184V72c0-19 15-34 34-34h164c19 0 34 15 34 34v112" fill="#7c5a91" stroke="#2b2140" stroke-width="9"/>
+  <path d="M76 184V84c0-12 10-22 22-22h124c12 0 22 10 22 22v100" fill="#f2c86d" stroke="#2b2140" stroke-width="7"/>
+  <path d="M94 122c18 16 39 24 66 24s48-8 66-24" fill="none" stroke="#2b2140" stroke-width="8" stroke-linecap="round"/>
+  <circle cx="116" cy="104" r="13" fill="#2b2140"/>
+  <circle cx="204" cy="104" r="13" fill="#2b2140"/>
+  <path d="M141 143v20M160 148v22M179 143v20" stroke="#2b2140" stroke-width="6" stroke-linecap="round"/>
+  <path d="M48 72h224" stroke="#ff8a3d" stroke-width="10" stroke-linecap="round"/>
+  <path d="M24 185h272" stroke="#2b2140" stroke-width="8" stroke-linecap="round" opacity=".24"/>
+</svg>

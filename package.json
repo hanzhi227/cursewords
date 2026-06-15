@@ -1,0 +1,80 @@
+{
+  "name": "cursewords",
+  "version": "0.4.0",
+  "private": true,
+  "description": "A Windows-first LAN desktop word-trap party game.",
+  "author": "ddroder",
+  "main": "dist-electron/electron/main.js",
+  "repository": {
+    "type": "git",
+    "url": "git+ssh://git@github.com/ddroder/cursewords.git"
+  },
+  "bugs": {
+    "url": "https://github.com/ddroder/cursewords/issues"
+  },
+  "homepage": "https://github.com/ddroder/cursewords#readme",
+  "scripts": {
+    "dev": "node scripts/dev.mjs",
+    "build:renderer": "vite build",
+    "build:electron": "tsc -p electron/tsconfig.json",
+    "build": "npm run build:renderer && npm run build:electron",
+    "dist": "npm run build && electron-builder --win nsis portable",
+    "release": "npm run build && electron-builder --win nsis portable --publish always",
+    "test": "vitest run"
+  },
+  "dependencies": {
+    "electron-updater": "^6.8.9",
+    "react": "^18.2.0",
+    "react-dom": "^18.2.0",
+    "socket.io": "^4.7.5",
+    "socket.io-client": "^4.7.5"
+  },
+  "devDependencies": {
+    "@types/node": "^20.12.12",
+    "@types/react": "^18.2.66",
+    "@types/react-dom": "^18.2.22",
+    "@vitejs/plugin-react": "^4.2.1",
+    "electron": "^30.0.8",
+    "electron-builder": "^24.13.3",
+    "typescript": "^5.4.5",
+    "vite": "^5.2.11",
+    "vitest": "^1.6.0"
+  },
+  "build": {
+    "appId": "com.ddroder.cursewords",
+    "productName": "Cursewords",
+    "directories": {
+      "output": "release"
+    },
+    "publish": [
+      {
+        "provider": "github",
+        "owner": "ddroder",
+        "repo": "cursewords",
+        "releaseType": "release"
+      }
+    ],
+    "files": [
+      "dist/**/*",
+      "dist-electron/**/*",
+      "package.json"
+    ],
+    "asar": true,
+    "win": {
+      "signAndEditExecutable": false,
+      "target": [
+        "nsis",
+        "portable"
+      ]
+    },
+    "nsis": {
+      "artifactName": "${productName}-Setup-${version}-${arch}.${ext}",
+      "oneClick": false,
+      "perMachine": false,
+      "allowToChangeInstallationDirectory": true
+    },
+    "portable": {
+      "artifactName": "${productName}-Portable-${version}-${arch}.${ext}"
+    }
+  }
+}

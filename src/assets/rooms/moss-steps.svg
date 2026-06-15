@@ -1,0 +1,9 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 320 220" role="img" aria-label="Moss-Slick Steps">
+  <rect width="320" height="220" rx="28" fill="#b7ecff"/>
+  <path d="M38 180 250 36c17-12 40 1 40 22v122H38Z" fill="#8064a8" stroke="#2b2140" stroke-width="8"/>
+  <path d="M68 163h198M94 139h172M121 115h145M147 91h119M174 67h92" stroke="#f4d37b" stroke-width="15" stroke-linecap="round"/>
+  <path d="M69 150c28-8 56 10 85 2 23-7 40-22 67-14 18 6 32 3 45-7" fill="none" stroke="#62c66e" stroke-width="14" stroke-linecap="round"/>
+  <path d="M58 181c29-20 63-20 102 0 39 21 75 18 108-9v48H58v-39Z" fill="#5fc978"/>
+  <circle cx="74" cy="53" r="18" fill="#ffe08a" stroke="#2b2140" stroke-width="6"/>
+  <path d="M52 89c22-7 43 1 63 20" stroke="#2b2140" stroke-width="7" stroke-linecap="round" opacity=".25"/>
+</svg>

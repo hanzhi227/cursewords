@@ -1,0 +1,10 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 128 128" role="img" aria-label="Dungeon monster">
+  <path d="M26 70c0-28 17-48 38-48s38 20 38 48v24c0 10-8 18-18 18H44c-10 0-18-8-18-18V70Z" fill="#55305F" stroke="#F5C86A" stroke-width="5"/>
+  <path d="M30 45 14 29M98 45l16-16" stroke="#FF8A3D" stroke-width="8" stroke-linecap="round"/>
+  <circle cx="50" cy="66" r="10" fill="#FFE08A"/>
+  <circle cx="78" cy="66" r="10" fill="#FFE08A"/>
+  <circle cx="53" cy="68" r="4" fill="#15101D"/>
+  <circle cx="75" cy="68" r="4" fill="#15101D"/>
+  <path d="M46 90c12 9 24 9 36 0" stroke="#66D9FF" stroke-width="5" stroke-linecap="round"/>
+  <path d="M48 90v10M64 94v12M80 90v10" stroke="#FFF2C8" stroke-width="4" stroke-linecap="round"/>
+</svg>

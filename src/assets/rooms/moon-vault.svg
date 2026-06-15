@@ -1,0 +1,10 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 320 220" role="img" aria-label="Moon Vault">
+  <rect width="320" height="220" rx="28" fill="#2f315f"/>
+  <circle cx="240" cy="48" r="31" fill="#fff4c6"/>
+  <circle cx="253" cy="37" r="31" fill="#2f315f"/>
+  <path d="M35 181c43-20 83-21 120-2 38 20 80 18 130-8v49H35v-39Z" fill="#445594"/>
+  <path d="M65 184V83c0-26 21-47 47-47h96c26 0 47 21 47 47v101" fill="#8ca8d8" stroke="#12172f" stroke-width="8"/>
+  <path d="M97 184v-67c0-35 28-63 63-63s63 28 63 63v67" fill="#d9ecff" stroke="#12172f" stroke-width="7"/>
+  <path d="M160 78 174 108l33 5-24 23 6 33-29-16-29 16 6-33-24-23 33-5 14-30Z" fill="#ffe08a" stroke="#12172f" stroke-width="5"/>
+  <path d="M63 50 51 38M84 34l-4-18M282 93l17-9M269 122l20 5" stroke="#ffe08a" stroke-width="5" stroke-linecap="round"/>
+</svg>

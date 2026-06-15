@@ -1,0 +1,8 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 128 128" role="img" aria-label="Torch">
+  <path d="M58 52h12l8 64H50l8-64Z" fill="#5A321B"/>
+  <path d="m52 56 24 2-3 16-18-2-3-16Z" fill="#9B572B"/>
+  <path d="M65 12c18 18 20 33 3 46 5-17-9-21-3-46Z" fill="#FFE08A"/>
+  <path d="M53 24c-15 18-11 33 9 39-7-14 6-22-9-39Z" fill="#FF8A3D"/>
+  <path d="M72 30c12 14 8 25-5 32 3-11-5-15 5-32Z" fill="#FF4F3D"/>
+  <path d="M45 56h38" stroke="#F5C86A" stroke-width="8" stroke-linecap="round"/>
+</svg>

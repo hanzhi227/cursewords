@@ -1,0 +1,14 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 128 128" role="img" aria-label="Dungeon Word Traps logo mark">
+  <defs>
+    <linearGradient id="g" x1="20" y1="12" x2="108" y2="116" gradientUnits="userSpaceOnUse">
+      <stop stop-color="#FFE08A"/>
+      <stop offset="0.52" stop-color="#FF8A3D"/>
+      <stop offset="1" stop-color="#66D9FF"/>
+    </linearGradient>
+  </defs>
+  <path d="M64 8 108 30v34c0 28-18 47-44 56-26-9-44-28-44-56V30L64 8Z" fill="#17111F" stroke="url(#g)" stroke-width="6"/>
+  <path d="M42 86h44V50c0-13-9-22-22-22S42 37 42 50v36Z" fill="#2A1B32" stroke="#F5C86A" stroke-width="5"/>
+  <path d="M54 86V62c0-6 4-10 10-10s10 4 10 10v24" fill="#120D18" stroke="#66D9FF" stroke-width="4"/>
+  <path d="M37 94h54" stroke="#FF8A3D" stroke-width="7" stroke-linecap="round"/>
+  <circle cx="64" cy="72" r="4" fill="#F5C86A"/>
+</svg>

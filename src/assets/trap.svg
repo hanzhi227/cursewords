@@ -1,0 +1,6 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 128 128" role="img" aria-label="Trap sigil">
+  <path d="M64 10 116 102H12L64 10Z" fill="#2A1B32" stroke="#FF5E57" stroke-width="7" stroke-linejoin="round"/>
+  <path d="M64 38v30" stroke="#F5C86A" stroke-width="9" stroke-linecap="round"/>
+  <circle cx="64" cy="88" r="6" fill="#F5C86A"/>
+  <path d="M34 101c20-16 40-16 60 0" stroke="#66D9FF" stroke-width="5" stroke-linecap="round" opacity="0.8"/>
+</svg>
