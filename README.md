@@ -80,6 +80,8 @@ railway domain
 
 ## Custom Words
 
+The built-in decks include broad everyday words and fantasy dungeon words. Use `Mixed` for the largest default pool, `Everyday` for easier table play, or `Fantasy` for a more thematic game.
+
 The host can configure custom words in the lobby before starting:
 
 - `Built-in only` uses the included everyday/fantasy decks.
