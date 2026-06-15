@@ -559,14 +559,54 @@ function PhasePanel({ view, action }: { view: PlayerView; action: (event: string
 
 function TrapWriting({ view, action }: { view: PlayerView; action: (event: string, payload?: unknown) => void }) {
   const limit = view.private.visibleTrapLimit ?? 0;
-  const [draft, setDraft] = useState("");
-  const traps = parseTrapDraft(draft).slice(0, limit);
   const targetTeam = view.private.writingForTeam;
-  const submitted = (view.private.submittedTraps?.length ?? 0) > 0;
+  const playerTeam = view.private.team;
+  const submitted = Boolean(playerTeam && view.state.round?.trapSubmittedByTeam[playerTeam]);
+  const traps = submitted ? view.private.submittedTraps ?? view.private.draftTraps ?? [] : view.private.draftTraps ?? [];
+  const [newTrap, setNewTrap] = useState("");
+  const [editingIndex, setEditingIndex] = useState<number | null>(null);
+  const [editingValue, setEditingValue] = useState("");
 
   useEffect(() => {
-    setDraft("");
+    setNewTrap("");
+    setEditingIndex(null);
+    setEditingValue("");
   }, [view.state.round?.index, targetTeam]);
+
+  function updateDraft(nextTraps: string[]) {
+    if (submitted) return;
+    action("setTrapDraft", { traps: nextTraps });
+  }
+
+  function addTrap() {
+    const trap = cleanTrapInput(newTrap);
+    if (!trap || traps.length >= limit) return;
+    updateDraft([...traps, trap]);
+    setNewTrap("");
+  }
+
+  function startEdit(index: number) {
+    setEditingIndex(index);
+    setEditingValue(traps[index] ?? "");
+  }
+
+  function saveEdit(index: number) {
+    const trap = cleanTrapInput(editingValue);
+    if (!trap) return;
+    updateDraft(traps.map((existing, trapIndex) => (trapIndex === index ? trap : existing)));
+    setEditingIndex(null);
+    setEditingValue("");
+  }
+
+  function cancelEdit() {
+    setEditingIndex(null);
+    setEditingValue("");
+  }
+
+  function removeTrap(index: number) {
+    updateDraft(traps.filter((_trap, trapIndex) => trapIndex !== index));
+    if (editingIndex === index) cancelEdit();
+  }
 
   return (
     <section className="phase-card spellbook-card">
@@ -576,18 +616,57 @@ function TrapWriting({ view, action }: { view: PlayerView; action: (event: strin
         <>
           <h2>Rig the word for {TEAM_LABEL[targetTeam]}</h2>
           <SecretWord word={view.private.visibleTarget} label="Their target word" />
-          <p className="phase-copy">Write exactly {limit} traps. If their clue-giver says one, your team can spring it.</p>
-          <textarea
-            value={draft}
-            disabled={submitted}
-            onChange={(event) => setDraft(event.target.value)}
-            placeholder={`One trap per line\n${Array.from({ length: limit }, (_, index) => `Trap ${index + 1}`).join("\n")}`}
-          />
-          <div className="trap-meter"><span>{traps.length}</span> / {limit} traps ready</div>
+          <p className="phase-copy">Build exactly {limit} shared traps with your team. Everyone on your team can add, edit, and remove traps before the book is sealed.</p>
+          <div className="shared-trap-list">
+            {traps.map((trap, index) => (
+              <div className="shared-trap-row" key={`${index}-${trap}`}>
+                {editingIndex === index && !submitted ? (
+                  <>
+                    <input
+                      value={editingValue}
+                      onChange={(event) => setEditingValue(event.target.value)}
+                      onKeyDown={(event) => {
+                        if (event.key === "Enter") saveEdit(index);
+                        if (event.key === "Escape") cancelEdit();
+                      }}
+                    />
+                    <button className="secondary-button small" disabled={!cleanTrapInput(editingValue)} onClick={() => saveEdit(index)} type="button">Save</button>
+                    <button className="ghost-button small" onClick={cancelEdit} type="button">Cancel</button>
+                  </>
+                ) : (
+                  <>
+                    <strong>{trap}</strong>
+                    {!submitted && (
+                      <div className="trap-row-actions">
+                        <button className="secondary-button small" onClick={() => startEdit(index)} type="button">Edit</button>
+                        <button className="danger-button small" onClick={() => removeTrap(index)} type="button">Remove</button>
+                      </div>
+                    )}
+                  </>
+                )}
+              </div>
+            ))}
+            {traps.length === 0 && <p className="empty-slot">No traps drafted yet. Add the first one for your team.</p>}
+          </div>
+          {!submitted && (
+            <div className="add-trap-row">
+              <input
+                value={newTrap}
+                disabled={traps.length >= limit}
+                onChange={(event) => setNewTrap(event.target.value)}
+                onKeyDown={(event) => {
+                  if (event.key === "Enter") addTrap();
+                }}
+                placeholder={traps.length >= limit ? "Trap limit reached" : "Add a trap word"}
+              />
+              <button className="secondary-button" disabled={traps.length >= limit || !cleanTrapInput(newTrap)} onClick={addTrap} type="button">Add Trap</button>
+            </div>
+          )}
+          <div className="trap-meter"><span>{traps.length}</span> / {limit} shared traps ready</div>
           <button
             className="primary-button"
             disabled={submitted || traps.length !== limit}
-            onClick={() => action("submitTraps", { traps })}
+            onClick={() => action("submitTraps")}
             type="button"
           >
             Seal Trap Book
@@ -835,11 +914,8 @@ function normalizeAddress(address: string) {
   return `http://${trimmed}`;
 }
 
-function parseTrapDraft(draft: string) {
-  return draft
-    .split(/[\n,]/g)
-    .map((line) => line.trim())
-    .filter(Boolean);
+function cleanTrapInput(trap: string) {
+  return trap.trim().replace(/\s+/g, " ").slice(0, 40);
 }
 
 function parseCustomWords(text: string) {

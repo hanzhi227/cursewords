@@ -19,6 +19,7 @@ interface InternalRoundState {
   index: number;
   targetWords: Record<TeamId, string>;
   trapsForTeam: Record<TeamId, string[]>;
+  draftTrapsForTeam: Record<TeamId, string[]>;
   trapLimitForTeam: Record<TeamId, number>;
   trapSubmittedByTeam: Record<TeamId, boolean>;
   clueGivers: Partial<Record<TeamId, string>>;
@@ -123,10 +124,8 @@ export class GameEngine {
     if (this.state.phase !== "trap-writing") throw new Error("Trap writing is not active.");
 
     const targetTeam = otherTeam(team);
-    const limit = round.trapLimitForTeam[targetTeam];
-    if (round.trapSubmittedByTeam[team]) throw new Error("Your team already sealed its trap book.");
-    const cleaned = normalizeTraps(traps).slice(0, limit);
-    if (cleaned.length !== limit) throw new Error(`Write exactly ${limit} trap words.`);
+    const sourceTraps = traps.length > 0 ? traps : round.draftTrapsForTeam[targetTeam];
+    const cleaned = this.setTrapDraftForTeam(team, targetTeam, sourceTraps);
 
     round.trapsForTeam[targetTeam] = cleaned;
     round.trapSubmittedByTeam[team] = true;
@@ -137,6 +136,16 @@ export class GameEngine {
       this.state.phase = "between-turns";
       this.log("Both spellbooks are locked. The first clue-giver approaches.");
     }
+  }
+
+  setTrapDraft(playerId: string, traps: string[]) {
+    const player = this.requirePlayer(playerId);
+    const team = this.requireTeam(player);
+    this.requireRound();
+    if (this.state.phase !== "trap-writing") throw new Error("Trap writing is not active.");
+
+    const targetTeam = otherTeam(team);
+    this.setTrapDraftForTeam(team, targetTeam, traps, false);
   }
 
   beginClue(playerId: string, rawTeam: unknown) {
@@ -280,6 +289,7 @@ export class GameEngine {
       index,
       targetWords,
       trapsForTeam: { ember: [], frost: [] },
+      draftTrapsForTeam: { ember: [], frost: [] },
       trapLimitForTeam: {
         ember: this.currentRoomForTeam("ember").trapCount,
         frost: this.currentRoomForTeam("frost").trapCount
@@ -382,6 +392,7 @@ export class GameEngine {
         writingForTeam: targetTeam,
         visibleTarget: round.targetWords[targetTeam],
         visibleTrapLimit: round.trapLimitForTeam[targetTeam],
+        draftTraps: [...round.draftTrapsForTeam[targetTeam]],
         submittedTraps: round.trapSubmittedByTeam[player.team] ? round.trapsForTeam[targetTeam] : []
       };
     }
@@ -406,6 +417,18 @@ export class GameEngine {
     }
 
     return view;
+  }
+
+  private setTrapDraftForTeam(team: TeamId, targetTeam: TeamId, traps: string[], requireExact = true) {
+    const round = this.requireRound();
+    const limit = round.trapLimitForTeam[targetTeam];
+    if (round.trapSubmittedByTeam[team]) throw new Error("Your team already sealed its trap book.");
+
+    const cleaned = normalizeTraps(traps).slice(0, limit);
+    if (requireExact && cleaned.length !== limit) throw new Error(`Write exactly ${limit} trap words.`);
+
+    round.draftTrapsForTeam[targetTeam] = cleaned;
+    return cleaned;
   }
 
   private ensureReadyToStart() {

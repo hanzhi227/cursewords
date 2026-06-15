@@ -109,6 +109,7 @@ export interface PrivateView {
   visibleTarget?: string;
   visibleTraps?: string[];
   visibleTrapLimit?: number;
+  draftTraps?: string[];
   submittedTraps?: string[];
 }
 

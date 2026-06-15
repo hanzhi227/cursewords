@@ -36,9 +36,10 @@ export function DungeonBoard({ view }: { view: PlayerView }) {
   const activeTeam = state.round?.activeTeam ?? state.round?.nextTeam;
   const spotlightIndex = activeTeam ? state.teams[activeTeam].progress : Math.max(state.teams.ember.progress, state.teams.frost.progress);
   const spotlightRoom = state.rooms[Math.min(spotlightIndex, state.rooms.length - 1)];
+  const longBoard = state.rooms.length > ROOM_AREAS.length;
 
   return (
-    <section className="panel dungeon-board-panel">
+    <section className={`panel dungeon-board-panel ${longBoard ? "long-board" : ""}`}>
       <div className="board-header">
         <div>
           <p className="eyebrow">Dungeon board</p>
@@ -52,19 +53,21 @@ export function DungeonBoard({ view }: { view: PlayerView }) {
       </div>
 
       <div className="dungeon-board-stage">
-        <svg className="dungeon-path-lines" viewBox="0 0 1000 500" aria-hidden="true">
-          <path className="path-shadow" d="M92 104 C226 34 303 64 388 121 S579 205 686 140 S848 71 929 119" />
-          <path className="path-shadow" d="M929 119 C826 220 705 228 604 258 S386 291 291 364 S132 439 76 365" />
-          <path className="path-main" d="M92 104 C226 34 303 64 388 121 S579 205 686 140 S848 71 929 119" />
-          <path className="path-main" d="M929 119 C826 220 705 228 604 258 S386 291 291 364 S132 439 76 365" />
-        </svg>
+        {!longBoard && (
+          <svg className="dungeon-path-lines" viewBox="0 0 1000 500" aria-hidden="true">
+            <path className="path-shadow" d="M92 104 C226 34 303 64 388 121 S579 205 686 140 S848 71 929 119" />
+            <path className="path-shadow" d="M929 119 C826 220 705 228 604 258 S386 291 291 364 S132 439 76 365" />
+            <path className="path-main" d="M92 104 C226 34 303 64 388 121 S579 205 686 140 S848 71 929 119" />
+            <path className="path-main" d="M929 119 C826 220 705 228 604 258 S386 291 291 364 S132 439 76 365" />
+          </svg>
+        )}
         <div className="dungeon-board-grid">
           {state.rooms.map((room, index) => (
             <RoomArtCard
               key={room.id}
               room={room}
               index={index}
-              area={ROOM_AREAS[index] ?? "room-a"}
+              area={longBoard ? undefined : ROOM_AREAS[index]}
               progress={{ ember: state.teams.ember.progress, frost: state.teams.frost.progress }}
               activeTeam={activeTeam}
               isBoss={index === state.rooms.length - 1}
@@ -91,7 +94,7 @@ function RoomArtCard({
 }: {
   room: RoomCard;
   index: number;
-  area: string;
+  area?: string;
   progress: Record<TeamId, number>;
   activeTeam?: TeamId;
   isBoss: boolean;
@@ -103,9 +106,9 @@ function RoomArtCard({
   const status = locked ? "locked" : active ? "active" : clearedBy.length > 0 ? "cleared" : "open";
 
   return (
-    <article className={`dungeon-room-card ${status} ${isBoss ? "boss-room" : ""}`} style={{ gridArea: area }}>
+    <article className={`dungeon-room-card ${status} ${isBoss ? "boss-room" : ""}`} style={area ? { gridArea: area } : undefined}>
       <div className="room-art-frame">
-        <img src={ROOM_ART[room.id]} alt={room.title} />
+        <img src={ROOM_ART[room.id] ?? gatehouseUrl} alt={room.title} />
         <div className="room-number">{index + 1}</div>
         <div className="room-trap-count">{room.trapCount} traps</div>
         <div className="pawn-dock">

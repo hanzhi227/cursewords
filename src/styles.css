@@ -356,7 +356,13 @@ code { padding: 10px 12px; border-radius: 12px; color: #120d18; background: var(
 .dungeon-board-stage {
   position: relative;
   min-height: 0;
+  overflow: auto;
+  scrollbar-gutter: stable;
   isolation: isolate;
+}
+
+.dungeon-board-panel.long-board .dungeon-board-stage {
+  padding-right: 6px;
 }
 
 .dungeon-path-lines {
@@ -392,6 +398,25 @@ code { padding: 10px 12px; border-radius: 12px; color: #120d18; background: var(
   height: 100%;
   min-height: 430px;
   padding: 6px;
+}
+
+.dungeon-board-panel.long-board .dungeon-board-grid {
+  grid-template-columns: repeat(auto-fit, minmax(220px, 1fr));
+  grid-template-rows: none;
+  grid-template-areas: none;
+  align-items: start;
+  height: auto;
+  min-height: 0;
+  padding: 6px 10px 10px 6px;
+}
+
+.dungeon-board-panel.long-board .dungeon-room-card,
+.dungeon-board-panel.long-board .dungeon-room-card.boss-room {
+  transform: none;
+}
+
+.dungeon-board-panel.long-board .dungeon-room-card:hover {
+  transform: translateY(-3px);
 }
 
 .dungeon-room-card {
@@ -544,6 +569,40 @@ code { padding: 10px 12px; border-radius: 12px; color: #120d18; background: var(
 .trap-meter span { color: var(--gold); font-weight: 950; }
 .success-text { color: #7dffa8; font-weight: 800; }
 
+.shared-trap-list {
+  display: grid;
+  gap: 10px;
+  max-width: 840px;
+  margin: 18px 0 14px;
+}
+
+.shared-trap-row {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto auto;
+  align-items: center;
+  gap: 10px;
+  padding: 12px;
+  border: 1px solid rgba(245, 200, 106, 0.16);
+  border-radius: 18px;
+  background: rgba(0, 0, 0, 0.18);
+}
+
+.shared-trap-row strong {
+  color: #fff0ca;
+  font-size: 1.08rem;
+}
+
+.shared-trap-row input { min-height: 44px; }
+.trap-row-actions { display: flex; flex-wrap: wrap; gap: 8px; justify-content: flex-end; }
+
+.add-trap-row {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto;
+  gap: 10px;
+  max-width: 840px;
+  margin-bottom: 14px;
+}
+
 .secret-word {
   display: inline-grid;
   gap: 6px;
@@ -692,6 +751,9 @@ code { padding: 10px 12px; border-radius: 12px; color: #120d18; background: var(
     min-height: 0;
   }
   .dungeon-room-card, .dungeon-room-card.boss-room { transform: none; }
+  .shared-trap-row, .add-trap-row { grid-template-columns: 1fr; }
+  .trap-row-actions { justify-content: stretch; }
+  .trap-row-actions button { flex: 1; }
   .update-banner { left: 14px; right: 14px; bottom: 14px; width: auto; flex-direction: column; align-items: stretch; }
   h1 { font-size: clamp(3.4rem, 18vw, 5rem); }
 }

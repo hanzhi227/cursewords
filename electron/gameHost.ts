@@ -85,6 +85,10 @@ export class GameHost {
         this.safeAction(socket, ack, (playerId) => this.engine.submitTraps(playerId, Array.isArray(payload?.traps) ? payload.traps : []));
       });
 
+      socket.on("setTrapDraft", (payload: { traps: string[] }, ack?: Ack) => {
+        this.safeAction(socket, ack, (playerId) => this.engine.setTrapDraft(playerId, Array.isArray(payload?.traps) ? payload.traps : []));
+      });
+
       socket.on("beginClue", (payload: { team: unknown }, ack?: Ack) => {
         this.safeAction(socket, ack, (playerId) => this.engine.beginClue(playerId, payload.team));
       });

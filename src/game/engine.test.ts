@@ -56,4 +56,39 @@ describe("GameEngine", () => {
     expect(engine.snapshot().settings.customWordCount).toBe(2);
     expect(engine.snapshot().settings.wordSource).toBe("custom");
   });
+
+  it("shares trap drafts with teammates but not opponents", () => {
+    const engine = new GameEngine();
+    engine.joinPlayer("host", "Host", true);
+    engine.joinPlayer("ally", "Ally", false);
+    engine.joinPlayer("guest", "Guest", false);
+    engine.chooseTeam("host", "ember");
+    engine.chooseTeam("ally", "ember");
+    engine.chooseTeam("guest", "frost");
+    engine.startGame("host");
+
+    engine.setTrapDraft("host", ["obvious", "synonym"]);
+
+    expect(engine.getView("host").private.draftTraps).toEqual(["obvious", "synonym"]);
+    expect(engine.getView("ally").private.draftTraps).toEqual(["obvious", "synonym"]);
+    expect(engine.getView("guest").private.draftTraps).toEqual([]);
+    expect(engine.snapshot().round?.reveal).toBeUndefined();
+  });
+
+  it("seals the shared draft and blocks later edits", () => {
+    const engine = new GameEngine();
+    engine.joinPlayer("host", "Host", true);
+    engine.joinPlayer("guest", "Guest", false);
+    engine.chooseTeam("host", "ember");
+    engine.chooseTeam("guest", "frost");
+    engine.startGame("host");
+
+    const limit = engine.snapshot().round!.trapLimitForTeam.frost;
+    const traps = Array.from({ length: limit }, (_, index) => `draft trap ${index}`);
+    engine.setTrapDraft("host", traps);
+    engine.submitTraps("host", []);
+
+    expect(engine.getView("host").private.submittedTraps).toEqual(traps);
+    expect(() => engine.setTrapDraft("host", ["late trap"])).toThrow("already sealed");
+  });
 });
