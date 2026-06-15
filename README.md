@@ -1,74 +1,82 @@
-# Cursewords
+# Cursewords Web
 
-A LAN desktop party game inspired by hidden forbidden-word clue games. This project uses original branding, original word decks, and original dungeon visuals.
+A browser-based party word game inspired by hidden forbidden-word clue games. This branch runs as a hosted web app with room codes instead of the Electron LAN desktop build.
 
 ## Requirements
 
-- Windows 10 or newer, or macOS on Intel/Apple Silicon
-- Node.js LTS with npm on PATH
+- Node.js LTS with npm
 
 ## Development
 
-```powershell
+```bash
 npm install
 npm run dev
 ```
 
-## Build A Windows App
+This starts:
 
-```powershell
+- the game server on `http://127.0.0.1:4949`
+- the Vite client on `http://127.0.0.1:5173`
+
+Open the Vite URL in your browser. Socket.IO traffic is proxied from the client dev server to the game server.
+
+## Production Build
+
+```bash
 npm install
-npm run dist
+npm run build
+npm start
 ```
 
-The packaged output is written to `release/`:
+The production server serves the built client from `dist/` and hosts Socket.IO on port `4949` by default.
 
-- `Cursewords-Portable-0.4.5-x64.exe`
-- `Cursewords-Setup-0.4.5-x64.exe`
-- `win-unpacked/`
+Set `PORT` to change the listen port.
 
-## Build A macOS App
+Set `CURSEWORDS_PLAY_PASSWORD` to require a shared password before anyone can create or join rooms:
 
-Build macOS packages on a Mac:
-
-```sh
-npm install
-npm run dist:mac
+```bash
+CURSEWORDS_PLAY_PASSWORD="your-table-password" npm start
 ```
 
-The packaged output is written to `release/`:
+`PLAY_PASSWORD` is also supported as a shorter alias.
 
-- `Cursewords-0.4.5-x64.dmg`
-- `Cursewords-0.4.5-arm64.dmg`
-- `Cursewords-0.4.5-x64.zip`
-- `Cursewords-0.4.5-arm64.zip`
-- `latest-mac.yml`
+## Railway Deploy
 
-This simple macOS port is unsigned. macOS may show a Gatekeeper warning the first time the app is opened. A polished public release should use Apple Developer ID signing and notarization.
+This repo includes `railway.json` so Railway builds with `npm run build`, starts with `npm start`, and healthchecks `/healthz`.
 
-## Publish Updates
+Before sharing the public URL, set a password variable in Railway:
 
-Installed Windows builds use GitHub Releases for over-the-air updates through `electron-updater`. Portable builds are still useful for manual download, but the installed NSIS build is the reliable Windows auto-update path. For the simple unsigned macOS port, distribute the `.dmg` manually until signing and notarization are configured.
-
-1. Set a GitHub token that can create releases for `ddroder/cursewords`.
-2. Run the publish script:
-
-```powershell
-$env:GH_TOKEN="github_pat_or_token"
-npm run release
+```bash
+CURSEWORDS_PLAY_PASSWORD=your-table-password
 ```
 
-The Windows release upload includes the installer, portable app, blockmaps, and update metadata such as `latest.yml`. Packaged apps check for updates on launch/home/lobby screens and prompt users to download and restart when a new version is available.
+Railway will provide the public ingress and the runtime `PORT`. The server already listens on `0.0.0.0` and reads `process.env.PORT`, falling back to `4949` only for local runs.
 
-## LAN Play
+### Deploy From GitHub
 
-1. One player launches the app and clicks `Host LAN Delve`.
-2. The host screen shows one or more LAN addresses like `192.168.1.20:4949`.
-3. Other players launch the app, enter that address, and click `Join`.
+1. Push this repo to GitHub.
+2. In Railway, create a new project from the GitHub repo.
+3. Add the `CURSEWORDS_PLAY_PASSWORD` variable on the app service.
+4. Open the service settings and generate a public Railway domain.
+5. Share that domain and the password with players.
+
+### Deploy From CLI
+
+```bash
+railway login
+railway init
+railway variable --set "CURSEWORDS_PLAY_PASSWORD=your-table-password"
+railway up
+railway domain
+```
+
+## Play Online
+
+1. One player opens the site and clicks `Create Room`.
+2. The lobby shows a 6-character room code.
+3. Other players open the same site, enter that code, and click `Join`.
 4. Players choose `Ember Guild` or `Frost Order`.
-5. The host starts the dungeon when both teams have players.
-
-Windows Firewall or macOS Local Network/Firewall may ask for permission the first time the host starts a LAN server. Allow local/private-network access.
+5. The host starts the dungeon when both teams have players and everyone is ready.
 
 ## Custom Words
 
@@ -78,7 +86,7 @@ The host can configure custom words in the lobby before starting:
 - `Built-in + custom` mixes pasted words with the selected built-in deck.
 - `Custom only` uses only pasted words and requires at least 2 valid entries.
 
-Paste one word or phrase per line. Custom words are saved locally in the host app's storage and are only used by the host server when a new game starts.
+Paste one word or phrase per line. Custom words are saved in the host browser's local storage.
 
 ## Illustrated Dungeon Board
 
@@ -96,7 +104,7 @@ The game view includes a whimsical board-game style dungeon map with original il
 
 ## Project Layout
 
-- `electron/` desktop shell, LAN host server, IPC bridge.
+- `server/` Node/Socket.IO room server and multiplayer routing.
 - `src/game/` authoritative game engine, word decks, rooms, tests.
 - `src/shared/` cross-process TypeScript contracts.
 - `src/assets/` original SVG assets.
@@ -106,22 +114,7 @@ The game view includes a whimsical board-game style dungeon map with original il
 
 ## Verification
 
-Run these after Node.js is installed:
-
-```powershell
+```bash
 npm test
 npm run build
-npm run dist
 ```
-
-On macOS, also run:
-
-```sh
-npm run dist:mac
-```
-
-Verified in this workspace with a portable Node.js 20.15.1 toolchain:
-
-- `npm test`
-- `npm run build`
-- `npm run dist`

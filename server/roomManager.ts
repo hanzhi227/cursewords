@@ -1,0 +1,263 @@
+import { randomBytes } from "crypto";
+import type { Server as SocketServer, Socket } from "socket.io";
+import { GameEngine } from "../src/game/engine";
+import { normalizeRoomCode } from "../src/shared/roomCode";
+import type { ClientActionResult, GameSetup, RoomCreateResult } from "../src/shared/types";
+
+type Ack<T = ClientActionResult> = (result: T) => void;
+type RoomManagerOptions = {
+  playPassword?: string;
+};
+
+const ROOM_CODE_CHARS = "ABCDEFGHJKLMNPQRSTUVWXYZ23456789";
+const ROOM_CODE_LENGTH = 6;
+const MAX_ROOMS = 200;
+const AUTH_ERROR = "Invalid play password.";
+
+export class GameRoom {
+  readonly code: string;
+  readonly hostToken: string;
+  readonly engine = new GameEngine();
+  private timer: NodeJS.Timeout | null = null;
+
+  constructor(code: string, hostToken: string) {
+    this.code = code;
+    this.hostToken = hostToken;
+  }
+
+  isHostToken(token?: string) {
+    return Boolean(token && token === this.hostToken);
+  }
+
+  joinSocket(socket: Socket, io: SocketServer, options: { name?: string; hostToken?: string }) {
+    const isHost = this.isHostToken(options.hostToken);
+    const result = this.engine.joinPlayer(socket.id, options.name, isHost);
+    socket.data.playerId = result.playerId;
+    socket.data.roomCode = this.code;
+    socket.join(this.code);
+    this.emitViews(io);
+    return result;
+  }
+
+  bindSocket(socket: Socket, io: SocketServer) {
+    socket.on("join", (payload: { name?: string; hostToken?: string } | undefined, ack?: Ack) => {
+      try {
+        this.joinSocket(socket, io, {
+          name: payload?.name,
+          hostToken: payload?.hostToken
+        });
+        ack?.({ ok: true });
+      } catch (error) {
+        const message = error instanceof Error ? error.message : "Could not join room.";
+        ack?.({ ok: false, error: message });
+        socket.emit("notice", message);
+      }
+    });
+
+    socket.on("setName", (payload: { name: string }, ack?: Ack) => {
+      this.safeAction(socket, ack, io, (playerId) => this.engine.setName(playerId, typeof payload?.name === "string" ? payload.name : ""));
+    });
+
+    socket.on("chooseTeam", (payload: { team: unknown }, ack?: Ack) => {
+      this.safeAction(socket, ack, io, (playerId) => this.engine.chooseTeam(playerId, payload.team));
+    });
+
+    socket.on("setLobbyReady", (payload: { ready?: boolean } | undefined, ack?: Ack) => {
+      this.safeAction(socket, ack, io, (playerId) => this.engine.setLobbyReady(playerId, Boolean(payload?.ready)));
+    });
+
+    socket.on("startGame", (payload: { settings?: GameSetup } | undefined, ack?: Ack) => {
+      this.safeAction(socket, ack, io, (playerId) => this.engine.startGame(playerId, payload?.settings ?? {}));
+    });
+
+    socket.on("submitTraps", (payload: { traps: string[] }, ack?: Ack) => {
+      this.safeAction(socket, ack, io, (playerId) => this.engine.submitTraps(playerId, Array.isArray(payload?.traps) ? payload.traps : []));
+    });
+
+    socket.on("setTrapDraft", (payload: { traps: string[] }, ack?: Ack) => {
+      this.safeAction(socket, ack, io, (playerId) => this.engine.setTrapDraft(playerId, Array.isArray(payload?.traps) ? payload.traps : []));
+    });
+
+    socket.on("sendTeamMessage", (payload: { text?: unknown } | undefined, ack?: Ack) => {
+      this.safeAction(socket, ack, io, (playerId) => this.engine.sendTeamMessage(playerId, payload?.text));
+    });
+
+    socket.on("setTurnReady", (payload: { ready?: boolean } | undefined, ack?: Ack) => {
+      this.safeAction(socket, ack, io, (playerId) => this.engine.setTurnReady(playerId, Boolean(payload?.ready)));
+    });
+
+    socket.on("beginClue", (payload: { team: unknown }, ack?: Ack) => {
+      this.safeAction(socket, ack, io, (playerId) => this.engine.beginClue(playerId, payload.team));
+    });
+
+    socket.on("resolveAttempt", (payload: { result: unknown; trap?: string }, ack?: Ack) => {
+      this.safeAction(socket, ack, io, (playerId) => this.engine.resolveAttempt(playerId, payload.result, payload.trap));
+    });
+
+    socket.on("nextRound", (_payload: unknown, ack?: Ack) => {
+      this.safeAction(socket, ack, io, (playerId) => this.engine.nextRound(playerId));
+    });
+
+    socket.on("resetGame", (_payload: unknown, ack?: Ack) => {
+      this.safeAction(socket, ack, io, (playerId) => this.engine.resetGame(playerId));
+    });
+
+    socket.on("disconnect", () => {
+      const playerId = socket.data.playerId as string | undefined;
+      if (playerId) this.engine.disconnectPlayer(playerId);
+      this.emitViews(io);
+    });
+  }
+
+  private safeAction(socket: Socket, ack: Ack | undefined, io: SocketServer, action: (playerId: string) => void) {
+    try {
+      const playerId = socket.data.playerId as string | undefined;
+      if (!playerId) throw new Error("Join the game first.");
+      action(playerId);
+      ack?.({ ok: true });
+      this.syncTimer(io);
+      this.emitViews(io);
+    } catch (error) {
+      const message = error instanceof Error ? error.message : "Unknown action failure.";
+      ack?.({ ok: false, error: message });
+      socket.emit("notice", message);
+    }
+  }
+
+  emitViews(io: SocketServer) {
+    const room = io.sockets.adapter.rooms.get(this.code);
+    if (!room) return;
+
+    for (const socketId of room) {
+      const socket = io.sockets.sockets.get(socketId);
+      if (!socket) continue;
+      const playerId = socket.data.playerId as string | undefined;
+      if (playerId) socket.emit("view", this.engine.getView(playerId));
+    }
+  }
+
+  private syncTimer(io: SocketServer) {
+    if (this.timer) clearTimeout(this.timer);
+    this.timer = null;
+
+    const deadline = this.engine.activeDeadline();
+    if (!deadline) return;
+
+    const delay = Math.max(0, deadline - Date.now() + 100);
+    this.timer = setTimeout(() => {
+      try {
+        this.engine.autoTimeUp();
+        this.emitViews(io);
+      } finally {
+        this.syncTimer(io);
+      }
+    }, delay);
+  }
+
+  destroy() {
+    if (this.timer) clearTimeout(this.timer);
+    this.timer = null;
+  }
+}
+
+export class RoomManager {
+  private rooms = new Map<string, GameRoom>();
+  private playPassword?: string;
+
+  constructor(options: RoomManagerOptions = {}) {
+    this.playPassword = cleanPassword(options.playPassword);
+  }
+
+  bind(io: SocketServer) {
+    if (this.playPassword) {
+      io.use((socket, next) => {
+        const password = socket.handshake.auth?.playPassword;
+        if (typeof password === "string" && password === this.playPassword) {
+          next();
+          return;
+        }
+        next(new Error(AUTH_ERROR));
+      });
+    }
+
+    io.on("connection", (socket) => {
+      socket.on("createRoom", (payload: { name?: string } | undefined, ack?: Ack<RoomCreateResult | ClientActionResult>) => {
+        try {
+          this.assertSocketAvailable(socket);
+          const room = this.allocateRoom();
+          room.bindSocket(socket, io);
+          socket.data.boundRoom = room.code;
+          room.joinSocket(socket, io, { name: payload?.name, hostToken: room.hostToken });
+
+          const result: RoomCreateResult = {
+            roomCode: room.code,
+            hostToken: room.hostToken
+          };
+          ack?.(result);
+        } catch (error) {
+          const message = error instanceof Error ? error.message : "Could not create room.";
+          ack?.({ ok: false, error: message });
+        }
+      });
+
+      socket.on("joinRoom", (payload: { roomCode?: string; name?: string; hostToken?: string } | undefined, ack?: Ack) => {
+        try {
+          this.assertSocketAvailable(socket);
+          const roomCode = normalizeRoomCode(payload?.roomCode);
+          if (!roomCode) throw new Error("Enter a valid room code.");
+
+          const room = this.rooms.get(roomCode);
+          if (!room) throw new Error("Room not found. Check the code and try again.");
+
+          room.bindSocket(socket, io);
+          socket.data.boundRoom = room.code;
+          room.joinSocket(socket, io, {
+            name: payload?.name,
+            hostToken: payload?.hostToken
+          });
+          ack?.({ ok: true });
+        } catch (error) {
+          const message = error instanceof Error ? error.message : "Could not join room.";
+          ack?.({ ok: false, error: message });
+          socket.emit("notice", message);
+        }
+      });
+    });
+  }
+
+  private assertSocketAvailable(socket: Socket) {
+    if (socket.data.boundRoom) throw new Error("Already connected to a room.");
+  }
+
+  private allocateRoom(): GameRoom {
+    if (this.rooms.size >= MAX_ROOMS) {
+      throw new Error("Server is full. Try again in a moment.");
+    }
+
+    let code = "";
+    for (let attempt = 0; attempt < 12; attempt += 1) {
+      code = generateRoomCode();
+      if (!this.rooms.has(code)) break;
+      code = "";
+    }
+    if (!code) throw new Error("Could not allocate a room code.");
+
+    const room = new GameRoom(code, randomBytes(18).toString("hex"));
+    this.rooms.set(code, room);
+    return room;
+  }
+}
+
+function generateRoomCode() {
+  const bytes = randomBytes(ROOM_CODE_LENGTH);
+  let code = "";
+  for (let index = 0; index < ROOM_CODE_LENGTH; index += 1) {
+    code += ROOM_CODE_CHARS[bytes[index] % ROOM_CODE_CHARS.length];
+  }
+  return code;
+}
+
+function cleanPassword(password?: string) {
+  const cleaned = password?.trim();
+  return cleaned || undefined;
+}

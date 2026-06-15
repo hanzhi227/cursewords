@@ -1,6 +1,7 @@
 import { useEffect, useMemo, useRef, useState } from "react";
 import { io, type Socket } from "socket.io-client";
-import type { AttemptResult, ClientActionResult, DeckMode, GameSetup, HostStartResult, Player, PlayerView, TeamId, TeamMessage, UpdateStatus, WordSource } from "./shared/types";
+import type { AttemptResult, ClientActionResult, DeckMode, GameSetup, Player, PlayerView, RoomCreateResult, TeamId, TeamMessage, WordSource } from "./shared/types";
+import { normalizeRoomCode } from "./shared/roomCode";
 import { TEAM_IDS } from "./shared/types";
 import torchUrl from "./assets/torch.svg";
 import bookUrl from "./assets/spellbook.svg";
@@ -11,12 +12,9 @@ import doorUrl from "./assets/room-door.svg";
 import { DungeonBoard } from "./components/DungeonBoard";
 
 type ConnectionMode = "home" | "connecting" | "connected";
-
-interface UpdateActions {
-  check: () => void;
-  download: () => void;
-  install: () => void;
-}
+type AuthConfig = {
+  passwordRequired: boolean;
+};
 
 const TEAM_LABEL: Record<TeamId, string> = {
   ember: "Ember Guild",
@@ -30,21 +28,43 @@ const TEAM_MOTTO: Record<TeamId, string> = {
 
 export default function App() {
   const [name, setName] = useState(() => localStorage.getItem("dwt:name") || "");
-  const [joinAddress, setJoinAddress] = useState("");
+  const [playPassword, setPlayPassword] = useState(() => localStorage.getItem("dwt:playPassword") || "");
+  const [passwordDraft, setPasswordDraft] = useState("");
+  const [passwordRequired, setPasswordRequired] = useState<boolean | null>(null);
+  const [roomCode, setRoomCode] = useState("");
   const [connectionMode, setConnectionMode] = useState<ConnectionMode>("home");
-  const [hostInfo, setHostInfo] = useState<HostStartResult | null>(null);
+  const [roomInfo, setRoomInfo] = useState<RoomCreateResult | null>(null);
   const [view, setView] = useState<PlayerView | null>(null);
   const [notice, setNotice] = useState<string | null>(null);
-  const [updateStatus, setUpdateStatus] = useState<UpdateStatus | null>(null);
   const [customWordsText, setCustomWordsText] = useState(() => localStorage.getItem("dwt:customWords") || "");
   const [wordSource, setWordSource] = useState<WordSource>(() => parseStoredWordSource(localStorage.getItem("dwt:wordSource")));
   const [deckMode, setDeckMode] = useState<DeckMode>(() => parseStoredDeckMode(localStorage.getItem("dwt:deckMode")));
   const socketRef = useRef<Socket | null>(null);
-  const updateCheckStartedRef = useRef(false);
 
   useEffect(() => {
     localStorage.setItem("dwt:name", name);
   }, [name]);
+
+  useEffect(() => {
+    fetch("/auth-config")
+      .then((response) => {
+        if (!response.ok) throw new Error("Could not check password settings.");
+        return response.json() as Promise<AuthConfig>;
+      })
+      .then((config) => setPasswordRequired(Boolean(config.passwordRequired)))
+      .catch(() => {
+        setPasswordRequired(true);
+        setNotice("Could not check the play password gate.");
+      });
+  }, []);
+
+  useEffect(() => {
+    if (playPassword) {
+      localStorage.setItem("dwt:playPassword", playPassword);
+      return;
+    }
+    localStorage.removeItem("dwt:playPassword");
+  }, [playPassword]);
 
   useEffect(() => {
     localStorage.setItem("dwt:customWords", customWordsText);
@@ -64,81 +84,117 @@ export default function App() {
     };
   }, []);
 
-  useEffect(() => {
-    const updates = window.cursewords?.updates;
-    if (!updates) return;
-
-    let active = true;
-    updates.getStatus().then((status) => {
-      if (active) setUpdateStatus(status);
-    }).catch(() => undefined);
-    const unsubscribe = updates.onStatus((status) => setUpdateStatus(status));
-
-    return () => {
-      active = false;
-      unsubscribe();
-    };
-  }, []);
-
-  const canCheckForUpdates = connectionMode !== "connected" || view?.state.phase === "lobby" || view?.state.phase === "game-over";
-
-  useEffect(() => {
-    const updates = window.cursewords?.updates;
-    if (!updates || !canCheckForUpdates || updateCheckStartedRef.current) return;
-    updateCheckStartedRef.current = true;
-    updates.check().then((status) => setUpdateStatus(status)).catch((error) => setNotice(errorMessage(error)));
-  }, [canCheckForUpdates]);
-
-  async function hostGame() {
-    if (!window.cursewords) {
-      setNotice("Host mode requires the desktop app.");
-      return;
-    }
-    setConnectionMode("connecting");
-    try {
-      const info = await window.cursewords.startHost();
-      setHostInfo(info);
-      connectTo(`http://127.0.0.1:${info.port}`, info.hostToken);
-    } catch (error) {
+  function bindSocket(socket: Socket) {
+    socket.on("view", (nextView: PlayerView) => setView(nextView));
+    socket.on("notice", (message: string) => setNotice(message));
+    socket.on("connect_error", (error) => {
+      if (error.message.toLowerCase().includes("password")) {
+        lockPlayPassword(error.message);
+        return;
+      }
       setConnectionMode("home");
-      setNotice(errorMessage(error));
-    }
+      setNotice(error.message);
+    });
+    socket.on("disconnect", () => {
+      setNotice("Disconnected from the dungeon.");
+    });
   }
 
-  function joinGame() {
-    const normalized = normalizeAddress(joinAddress);
-    if (!normalized) {
-      setNotice("Enter the host address shown on the host screen, for example 192.168.1.20:4949.");
-      return;
-    }
-    setConnectionMode("connecting");
-    connectTo(normalized);
-  }
-
-  function connectTo(endpoint: string, hostToken?: string) {
+  function connectSocket() {
     socketRef.current?.disconnect();
-    const socket = io(endpoint, {
+    const socket = io({
+      auth: playPassword ? { playPassword } : {},
       transports: ["websocket", "polling"],
       reconnectionAttempts: 8,
       reconnectionDelay: 600
     });
     socketRef.current = socket;
+    bindSocket(socket);
+    return socket;
+  }
 
-    socket.on("connect", () => {
-      socket.emit("join", { name: name || undefined, hostToken }, (result: ClientActionResult) => {
-        if (!result.ok) setNotice(result.error ?? "Could not join game.");
+  async function waitForSocket(socket: Socket) {
+    if (socket.connected) return;
+    await new Promise<void>((resolve, reject) => {
+      const onConnect = () => {
+        socket.off("connect_error", onError);
+        resolve();
+      };
+      const onError = (error: Error) => {
+        socket.off("connect", onConnect);
+        reject(error);
+      };
+      socket.once("connect", onConnect);
+      socket.once("connect_error", onError);
+    });
+  }
+
+  async function createRoom() {
+    if (passwordRequired && !playPassword) {
+      setNotice("Enter the play password first.");
+      return;
+    }
+
+    setConnectionMode("connecting");
+    try {
+      const socket = connectSocket();
+      await waitForSocket(socket);
+
+      const info = await new Promise<RoomCreateResult>((resolve, reject) => {
+        socket.emit("createRoom", { name: name || undefined }, (result: RoomCreateResult | ClientActionResult) => {
+          if ("roomCode" in result && result.roomCode) {
+            resolve(result);
+            return;
+          }
+          reject(new Error("error" in result ? result.error ?? "Could not create room." : "Could not create room."));
+        });
       });
+
+      setRoomInfo(info);
       setConnectionMode("connected");
-    });
-    socket.on("view", (nextView: PlayerView) => setView(nextView));
-    socket.on("notice", (message: string) => setNotice(message));
-    socket.on("connect_error", (error) => {
+    } catch (error) {
+      socketRef.current?.disconnect();
+      socketRef.current = null;
       setConnectionMode("home");
-      setNotice(error.message);
-    });
-    socket.on("disconnect", () => {
-      setNotice("Disconnected from the dungeon host.");
-    });
+      setNotice(errorMessage(error));
+    }
+  }
+
+  async function joinRoom() {
+    if (passwordRequired && !playPassword) {
+      setNotice("Enter the play password first.");
+      return;
+    }
+
+    const normalized = normalizeRoomCode(roomCode);
+    if (!normalized) {
+      setNotice("Enter the 6-character room code from the host.");
+      return;
+    }
+
+    setConnectionMode("connecting");
+    try {
+      const socket = connectSocket();
+      await waitForSocket(socket);
+
+      await new Promise<void>((resolve, reject) => {
+        socket.emit("joinRoom", { roomCode: normalized, name: name || undefined }, (result: ClientActionResult) => {
+          if (result.ok) {
+            resolve();
+            return;
+          }
+          reject(new Error(result.error ?? "Could not join room."));
+        });
+      });
+
+      setRoomInfo({ roomCode: normalized, hostToken: "" });
+      setConnectionMode("connected");
+    } catch (error) {
+      socketRef.current?.disconnect();
+      socketRef.current = null;
+      setConnectionMode("home");
+      setNotice(errorMessage(error));
+    }
   }
 
   function action(event: string, payload: unknown = {}) {
@@ -156,49 +212,66 @@ export default function App() {
     socketRef.current?.disconnect();
     socketRef.current = null;
     setView(null);
-    setHostInfo(null);
+    setRoomInfo(null);
     setConnectionMode("home");
   }
 
-  function checkForUpdates() {
-    window.cursewords?.updates.check().then((status) => setUpdateStatus(status)).catch((error) => setNotice(errorMessage(error)));
+  function unlockPlayPassword() {
+    const password = passwordDraft.trim();
+    if (!password) {
+      setNotice("Enter the play password.");
+      return;
+    }
+    setPlayPassword(password);
+    setPasswordDraft("");
+    setNotice(null);
   }
 
-  function downloadUpdate() {
-    window.cursewords?.updates.download().then((status) => setUpdateStatus(status)).catch((error) => setNotice(errorMessage(error)));
+  function lockPlayPassword(message: string) {
+    socketRef.current?.disconnect();
+    socketRef.current = null;
+    setView(null);
+    setRoomInfo(null);
+    setConnectionMode("home");
+    setPlayPassword("");
+    setPasswordDraft("");
+    setNotice(message);
   }
 
-  function installUpdate() {
-    window.cursewords?.updates.install().catch((error) => setNotice(errorMessage(error)));
+  if (passwordRequired === null || (passwordRequired && !playPassword)) {
+    return (
+      <Shell notice={notice} clearNotice={() => setNotice(null)}>
+        <PasswordGate
+          password={passwordDraft}
+          setPassword={setPasswordDraft}
+          unlock={unlockPlayPassword}
+          checking={passwordRequired === null}
+        />
+      </Shell>
+    );
   }
-
-  const updateActions = {
-    check: checkForUpdates,
-    download: downloadUpdate,
-    install: installUpdate
-  } satisfies UpdateActions;
 
   if (connectionMode !== "connected" || !view) {
     return (
-      <Shell notice={notice} clearNotice={() => setNotice(null)} updateStatus={updateStatus} updateActions={updateActions}>
+      <Shell notice={notice} clearNotice={() => setNotice(null)}>
         <HomeScreen
           name={name}
           setName={setName}
-          joinAddress={joinAddress}
-          setJoinAddress={setJoinAddress}
+          roomCode={roomCode}
+          setRoomCode={setRoomCode}
           connectionMode={connectionMode}
-          hostGame={hostGame}
-          joinGame={joinGame}
+          createRoom={createRoom}
+          joinRoom={joinRoom}
         />
       </Shell>
     );
   }
 
   return (
-    <Shell notice={notice} clearNotice={() => setNotice(null)} updateStatus={updateStatus} updateActions={updateActions}>
+    <Shell notice={notice} clearNotice={() => setNotice(null)}>
       <GameScreen
         view={view}
-        hostInfo={hostInfo}
+        roomInfo={roomInfo}
         name={name}
         setName={setName}
         customWordsText={customWordsText}
@@ -214,18 +287,48 @@ export default function App() {
   );
 }
 
+function PasswordGate(props: {
+  password: string;
+  setPassword: (password: string) => void;
+  unlock: () => void;
+  checking: boolean;
+}) {
+  return (
+    <main className="password-screen">
+      <section className="password-card">
+        <img className="logo-mark" src={logoUrl} alt="Cursewords mark" />
+        <p className="eyebrow">Private playtest</p>
+        <h1>Cursewords</h1>
+        <p className="hero-copy">Enter the shared play password to create or join a dungeon.</p>
+        <label className="field password-field">
+          Play password
+          <input
+            value={props.password}
+            disabled={props.checking}
+            onChange={(event) => props.setPassword(event.target.value)}
+            onKeyDown={(event) => {
+              if (event.key === "Enter") props.unlock();
+            }}
+            placeholder={props.checking ? "Checking gate..." : "Shared password"}
+            type="password"
+          />
+        </label>
+        <button className="primary-button password-button" disabled={props.checking} onClick={props.unlock} type="button">
+          {props.checking ? "Checking..." : "Unlock"}
+        </button>
+      </section>
+    </main>
+  );
+}
+
 function Shell({
   children,
   notice,
-  clearNotice,
-  updateStatus,
-  updateActions
+  clearNotice
 }: {
   children: React.ReactNode;
   notice: string | null;
   clearNotice: () => void;
-  updateStatus: UpdateStatus | null;
-  updateActions: UpdateActions;
 }) {
   return (
     <div className="app-shell">
@@ -234,7 +337,6 @@ function Shell({
       <div className="torch-glow torch-glow-left" />
       <div className="torch-glow torch-glow-right" />
       {children}
-      <UpdateBanner status={updateStatus} actions={updateActions} />
       {notice && (
         <button className="notice" onClick={clearNotice} type="button">
           {notice}
@@ -244,43 +346,20 @@ function Shell({
   );
 }
 
-function UpdateBanner({ status, actions }: { status: UpdateStatus | null; actions: UpdateActions }) {
-  if (!status || !["available", "downloading", "downloaded"].includes(status.type)) return null;
-
-  const title = status.type === "downloaded" ? "Update ready" : status.type === "downloading" ? "Downloading update" : "Update available";
-  const percent = status.percent ?? 0;
-
-  return (
-    <aside className={`update-banner ${status.type}`} role="status" aria-live="polite">
-      <div>
-        <strong>{title}</strong>
-        <span>{status.message ?? "A Cursewords update is available."}</span>
-        {status.type === "downloading" && (
-          <div className="update-progress" aria-label={`Download ${percent}% complete`}>
-            <i style={{ width: `${percent}%` }} />
-          </div>
-        )}
-      </div>
-      {status.type === "available" && <button className="secondary-button small" onClick={actions.download} type="button">Download</button>}
-      {status.type === "downloaded" && <button className="primary-button small" onClick={actions.install} type="button">Restart</button>}
-    </aside>
-  );
-}
-
 function HomeScreen(props: {
   name: string;
   setName: (name: string) => void;
-  joinAddress: string;
-  setJoinAddress: (address: string) => void;
+  roomCode: string;
+  setRoomCode: (code: string) => void;
   connectionMode: ConnectionMode;
-  hostGame: () => void;
-  joinGame: () => void;
+  createRoom: () => void;
+  joinRoom: () => void;
 }) {
   return (
     <main className="home-screen">
       <section className="hero-card">
         <img className="logo-mark" src={logoUrl} alt="Cursewords mark" />
-        <p className="eyebrow">LAN party word game</p>
+        <p className="eyebrow">Browser party word game</p>
         <h1>Cursewords</h1>
         <p className="hero-copy">
           Two rival adventuring teams write secret verbal traps, then race to describe dangerous words without stepping on them.
@@ -291,19 +370,20 @@ function HomeScreen(props: {
             <input value={props.name} onChange={(event) => props.setName(event.target.value)} placeholder="Your table name" />
           </label>
           <div className="home-actions">
-            <button className="primary-button" onClick={props.hostGame} disabled={props.connectionMode === "connecting"} type="button">
-              Host LAN Delve
+            <button className="primary-button" onClick={props.createRoom} disabled={props.connectionMode === "connecting"} type="button">
+              Create Room
             </button>
             <div className="join-row">
               <input
-                value={props.joinAddress}
-                onChange={(event) => props.setJoinAddress(event.target.value)}
-                placeholder="Host IP:port"
+                value={props.roomCode}
+                onChange={(event) => props.setRoomCode(event.target.value.toUpperCase())}
+                placeholder="Room code"
+                maxLength={6}
                 onKeyDown={(event) => {
-                  if (event.key === "Enter") props.joinGame();
+                  if (event.key === "Enter") props.joinRoom();
                 }}
               />
-              <button className="secondary-button" onClick={props.joinGame} disabled={props.connectionMode === "connecting"} type="button">
+              <button className="secondary-button" onClick={props.joinRoom} disabled={props.connectionMode === "connecting"} type="button">
                 Join
               </button>
             </div>
@@ -333,7 +413,7 @@ function Feature({ icon, title, copy }: { icon: string; title: string; copy: str
 
 function GameScreen(props: {
   view: PlayerView;
-  hostInfo: HostStartResult | null;
+  roomInfo: RoomCreateResult | null;
   name: string;
   setName: (name: string) => void;
   customWordsText: string;
@@ -367,7 +447,7 @@ function GameScreen(props: {
       {state.phase === "lobby" ? (
         <Lobby
           view={props.view}
-          hostInfo={props.hostInfo}
+          roomInfo={props.roomInfo}
           name={props.name}
           setName={props.setName}
           customWordsText={props.customWordsText}
@@ -399,7 +479,7 @@ function GameScreen(props: {
 
 function Lobby(props: {
   view: PlayerView;
-  hostInfo: HostStartResult | null;
+  roomInfo: RoomCreateResult | null;
   name: string;
   setName: (name: string) => void;
   customWordsText: string;
@@ -428,11 +508,9 @@ function Lobby(props: {
       <div className="lobby-card invite-card">
         <img src={doorUrl} alt="" />
         <h2>Gather the table</h2>
-        <p>Everyone opens the app, clicks Join, and enters one of the host addresses below.</p>
+        <p>Share the room code below. Everyone opens this site, enters the code, and clicks Join.</p>
         <div className="address-list">
-          {(props.hostInfo?.addresses ?? ["Ask the host for their address"]).map((address) => (
-            <code key={address}>{address}</code>
-          ))}
+          <code>{props.roomInfo?.roomCode ?? "Waiting for room code"}</code>
         </div>
         <label className="field compact">
           Your display name
@@ -569,7 +647,7 @@ function CustomWordsPanel(props: {
         )}
       </label>
       <p className="custom-word-summary">
-        {props.canHost ? `${customWords.length} custom words saved on this PC.` : "Only the host controls the word deck."}
+        {props.canHost ? `${customWords.length} custom words saved in this browser.` : "Only the host controls the word deck."}
         {props.wordSource === "custom" && customWords.length < 2 ? " Add at least 2 custom words for custom-only mode." : ""}
       </p>
     </div>
@@ -1013,13 +1091,6 @@ function groupPlayersByTeam(players: Player[]) {
 
 function findPlayer(view: PlayerView, playerId?: string) {
   return view.state.players.find((player) => player.id === playerId);
-}
-
-function normalizeAddress(address: string) {
-  const trimmed = address.trim();
-  if (!trimmed) return "";
-  if (trimmed.startsWith("http://") || trimmed.startsWith("https://")) return trimmed;
-  return `http://${trimmed}`;
 }
 
 function cleanTrapInput(trap: string) {
