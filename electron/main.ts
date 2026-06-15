@@ -7,11 +7,7 @@ import type { UpdateStatus } from "../src/shared/types";
 let mainWindow: BrowserWindow | null = null;
 let host: GameHost | null = null;
 let updaterConfigured = false;
-let updateStatus: UpdateStatus = {
-  type: app.isPackaged ? "idle" : "disabled",
-  updatedAt: Date.now(),
-  message: app.isPackaged ? undefined : "Updates are only available in packaged builds."
-};
+let updateStatus: UpdateStatus = initialUpdateStatus();
 
 function createWindow() {
   mainWindow = new BrowserWindow({
@@ -88,11 +84,9 @@ function configureUpdater() {
   autoUpdater.autoDownload = false;
   autoUpdater.autoInstallOnAppQuit = true;
 
-  if (!app.isPackaged) {
-    setUpdateStatus({
-      type: "disabled",
-      message: "Updates are only available in packaged builds."
-    });
+  const unavailableReason = updateUnavailableReason();
+  if (unavailableReason) {
+    setUpdateStatus({ type: "disabled", message: unavailableReason });
     return;
   }
 
@@ -140,12 +134,8 @@ function configureUpdater() {
 }
 
 async function checkForUpdates() {
-  if (!app.isPackaged) {
-    return setUpdateStatus({
-      type: "disabled",
-      message: "Updates are only available in packaged builds."
-    });
-  }
+  const disabledStatus = disabledUpdateStatus();
+  if (disabledStatus) return disabledStatus;
 
   try {
     await autoUpdater.checkForUpdates();
@@ -156,12 +146,8 @@ async function checkForUpdates() {
 }
 
 async function downloadUpdate() {
-  if (!app.isPackaged) {
-    return setUpdateStatus({
-      type: "disabled",
-      message: "Updates are only available in packaged builds."
-    });
-  }
+  const disabledStatus = disabledUpdateStatus();
+  if (disabledStatus) return disabledStatus;
 
   try {
     await autoUpdater.downloadUpdate();
@@ -178,6 +164,27 @@ function setUpdateStatus(status: Omit<UpdateStatus, "updatedAt">) {
   };
   mainWindow?.webContents.send("updates:status", updateStatus);
   return updateStatus;
+}
+
+function initialUpdateStatus(): UpdateStatus {
+  const unavailableReason = updateUnavailableReason();
+  return {
+    type: unavailableReason ? "disabled" : "idle",
+    updatedAt: Date.now(),
+    message: unavailableReason
+  };
+}
+
+function disabledUpdateStatus() {
+  const unavailableReason = updateUnavailableReason();
+  if (!unavailableReason) return undefined;
+  return setUpdateStatus({ type: "disabled", message: unavailableReason });
+}
+
+function updateUnavailableReason() {
+  if (!app.isPackaged) return "Updates are only available in packaged builds.";
+  if (process.env.PORTABLE_EXECUTABLE_DIR) return "Automatic updates are available in the installed app.";
+  return undefined;
 }
 
 function errorMessage(error: unknown) {
