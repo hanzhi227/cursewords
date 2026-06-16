@@ -790,7 +790,7 @@ function TrapWriting({ view, action }: { view: PlayerView; action: (event: strin
             </div>
           )}
           <div className="trap-meter"><span>{traps.length}</span> / {limit} shared traps ready</div>
-          <TeamChat messages={view.private.teamMessages ?? []} action={action} />
+          <TeamChat messages={view.private.teamMessages ?? []} playerId={view.private.playerId} action={action} />
           <button
             className="primary-button"
             disabled={submitted || traps.length !== limit}
@@ -811,9 +811,58 @@ function TrapWriting({ view, action }: { view: PlayerView; action: (event: strin
   );
 }
 
-function TeamChat({ messages, action }: { messages: TeamMessage[]; action: (event: string, payload?: unknown) => void }) {
+function TeamChat({ messages, playerId, action }: { messages: TeamMessage[]; playerId: string; action: (event: string, payload?: unknown) => void }) {
   const [draft, setDraft] = useState("");
+  const [incomingIds, setIncomingIds] = useState<Set<string>>(() => new Set());
+  const [panelPulse, setPanelPulse] = useState(false);
+  const logRef = useRef<HTMLDivElement>(null);
+  const lastSeenIdRef = useRef<string | undefined>(undefined);
+  const initializedRef = useRef(false);
   const text = cleanMessageInput(draft);
+
+  useEffect(() => {
+    const log = logRef.current;
+    if (!log) return;
+
+    const reducedMotion = window.matchMedia("(prefers-reduced-motion: reduce)").matches;
+    log.scrollTo({ top: log.scrollHeight, behavior: reducedMotion ? "auto" : "smooth" });
+
+    const lastMessage = messages[messages.length - 1];
+    if (!lastMessage) {
+      lastSeenIdRef.current = undefined;
+      initializedRef.current = true;
+      return;
+    }
+
+    if (!initializedRef.current) {
+      initializedRef.current = true;
+      lastSeenIdRef.current = lastMessage.id;
+      return;
+    }
+
+    if (lastMessage.id === lastSeenIdRef.current) return;
+
+    const previousIndex = lastSeenIdRef.current
+      ? messages.findIndex((message) => message.id === lastSeenIdRef.current)
+      : -1;
+    const freshMessages = previousIndex >= 0 ? messages.slice(previousIndex + 1) : [lastMessage];
+    const fromOthers = freshMessages.filter((message) => message.playerId !== playerId);
+
+    lastSeenIdRef.current = lastMessage.id;
+
+    if (fromOthers.length === 0) return;
+
+    playTeamChatNotification();
+    setIncomingIds(new Set(fromOthers.map((message) => message.id)));
+    setPanelPulse(true);
+
+    const timer = window.setTimeout(() => {
+      setIncomingIds(new Set());
+      setPanelPulse(false);
+    }, 700);
+
+    return () => window.clearTimeout(timer);
+  }, [messages, playerId]);
 
   function send() {
     if (!text) return;
@@ -822,14 +871,14 @@ function TeamChat({ messages, action }: { messages: TeamMessage[]; action: (even
   }
 
   return (
-    <section className="team-chat-panel">
+    <section className={`team-chat-panel${panelPulse ? " has-new-message" : ""}`}>
       <div className="team-chat-heading">
         <strong>Team Chat</strong>
         <span>Private during trap writing</span>
       </div>
-      <div className="team-chat-log">
+      <div className="team-chat-log" ref={logRef}>
         {messages.map((message) => (
-          <p key={message.id}>
+          <p className={incomingIds.has(message.id) ? "is-new" : undefined} key={message.id}>
             <strong>{message.playerName}</strong>
             <span>{message.text}</span>
           </p>
@@ -1132,6 +1181,36 @@ function cleanTrapInput(trap: string) {
 
 function cleanMessageInput(message: string) {
   return message.trim().replace(/\s+/g, " ").slice(0, 160);
+}
+
+let teamChatAudioContext: AudioContext | undefined;
+
+function playTeamChatNotification() {
+  try {
+    teamChatAudioContext ??= new AudioContext();
+    const ctx = teamChatAudioContext;
+    if (ctx.state === "suspended") void ctx.resume();
+
+    const now = ctx.currentTime;
+    const playTone = (frequency: number, start: number, duration: number) => {
+      const oscillator = ctx.createOscillator();
+      const gain = ctx.createGain();
+      oscillator.type = "sine";
+      oscillator.frequency.value = frequency;
+      gain.gain.setValueAtTime(0.0001, start);
+      gain.gain.exponentialRampToValueAtTime(0.07, start + 0.015);
+      gain.gain.exponentialRampToValueAtTime(0.0001, start + duration);
+      oscillator.connect(gain);
+      gain.connect(ctx.destination);
+      oscillator.start(start);
+      oscillator.stop(start + duration);
+    };
+
+    playTone(784, now, 0.11);
+    playTone(988, now + 0.07, 0.14);
+  } catch {
+    // Audio unavailable in this environment.
+  }
 }
 
 function parseCustomWords(text: string) {

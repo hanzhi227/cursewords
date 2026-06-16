@@ -671,6 +671,37 @@ code { padding: 10px 12px; border-radius: 12px; color: #120d18; background: var(
   background: rgba(255, 255, 255, 0.07);
 }
 
+.team-chat-log p.is-new {
+  animation: team-chat-message-in 0.45s ease;
+  background: rgba(255, 230, 167, 0.14);
+}
+
+.team-chat-panel.has-new-message {
+  animation: team-chat-panel-pulse 0.65s ease;
+}
+
+@keyframes team-chat-message-in {
+  from {
+    opacity: 0;
+    transform: translateY(8px);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0);
+  }
+}
+
+@keyframes team-chat-panel-pulse {
+  0%, 100% {
+    border-color: rgba(102, 217, 255, 0.18);
+    box-shadow: none;
+  }
+  45% {
+    border-color: rgba(102, 217, 255, 0.42);
+    box-shadow: 0 0 16px rgba(102, 217, 255, 0.12);
+  }
+}
+
 .team-chat-log p strong { display: block; color: #ffe6a7; }
 .team-chat-log p span { color: #f7edcf; line-height: 1.4; }
 
