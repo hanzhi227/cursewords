@@ -1,3 +1,4 @@
+import { memo, useMemo } from "react";
 import type { PlayerView, RoomCard, TeamId } from "../shared/types";
 import gatehouseUrl from "../assets/rooms/gatehouse.svg";
 import mossStepsUrl from "../assets/rooms/moss-steps.svg";
@@ -31,12 +32,15 @@ const TEAM_NAME: Record<TeamId, string> = {
 
 const ROOM_AREAS = ["room-a", "room-b", "room-c", "room-d", "room-e", "room-f", "room-g"];
 
-export function DungeonBoard({ view }: { view: PlayerView }) {
+export const DungeonBoard = memo(function DungeonBoard({ view }: { view: PlayerView }) {
   const { state } = view;
   const activeTeam = state.round?.activeTeam ?? state.round?.nextTeam;
   const spotlightIndex = activeTeam ? state.teams[activeTeam].progress : Math.max(state.teams.ember.progress, state.teams.frost.progress);
   const spotlightRoom = state.rooms[Math.min(spotlightIndex, state.rooms.length - 1)];
   const longBoard = state.rooms.length > ROOM_AREAS.length;
+  const emberProgress = state.teams.ember.progress;
+  const frostProgress = state.teams.frost.progress;
+  const roomCount = state.rooms.length;
 
   return (
     <section className={`panel dungeon-board-panel ${longBoard ? "long-board" : ""}`}>
@@ -68,7 +72,8 @@ export function DungeonBoard({ view }: { view: PlayerView }) {
               room={room}
               index={index}
               area={longBoard ? undefined : ROOM_AREAS[index]}
-              progress={{ ember: state.teams.ember.progress, frost: state.teams.frost.progress }}
+              emberProgress={emberProgress}
+              frostProgress={frostProgress}
               activeTeam={activeTeam}
               isBoss={index === state.rooms.length - 1}
             />
@@ -77,36 +82,39 @@ export function DungeonBoard({ view }: { view: PlayerView }) {
       </div>
 
       <div className="board-footer">
-        <TeamJourney team="ember" progress={state.teams.ember.progress} roomCount={state.rooms.length} />
-        <TeamJourney team="frost" progress={state.teams.frost.progress} roomCount={state.rooms.length} />
+        <TeamJourney team="ember" progress={emberProgress} roomCount={roomCount} />
+        <TeamJourney team="frost" progress={frostProgress} roomCount={roomCount} />
       </div>
     </section>
   );
-}
+});
 
-function RoomArtCard({
+const RoomArtCard = memo(function RoomArtCard({
   room,
   index,
   area,
-  progress,
+  emberProgress,
+  frostProgress,
   activeTeam,
   isBoss
 }: {
   room: RoomCard;
   index: number;
   area?: string;
-  progress: Record<TeamId, number>;
+  emberProgress: number;
+  frostProgress: number;
   activeTeam?: TeamId;
   isBoss: boolean;
 }) {
-  const pawns = (["ember", "frost"] as TeamId[]).filter((team) => progress[team] === index);
-  const clearedBy = (["ember", "frost"] as TeamId[]).filter((team) => progress[team] > index);
-  const locked = progress.ember < index && progress.frost < index;
-  const active = Boolean(activeTeam && progress[activeTeam] === index);
+  const gridStyle = useMemo(() => (area ? { gridArea: area } : undefined), [area]);
+  const pawns = (["ember", "frost"] as TeamId[]).filter((team) => (team === "ember" ? emberProgress : frostProgress) === index);
+  const clearedBy = (["ember", "frost"] as TeamId[]).filter((team) => (team === "ember" ? emberProgress : frostProgress) > index);
+  const locked = emberProgress < index && frostProgress < index;
+  const active = Boolean(activeTeam && (activeTeam === "ember" ? emberProgress : frostProgress) === index);
   const status = locked ? "locked" : active ? "active" : clearedBy.length > 0 ? "cleared" : "open";
 
   return (
-    <article className={`dungeon-room-card ${status} ${isBoss ? "boss-room" : ""}`} style={area ? { gridArea: area } : undefined}>
+    <article className={`dungeon-room-card ${status} ${isBoss ? "boss-room" : ""}`} style={gridStyle}>
       <div className="room-art-frame">
         <img src={ROOM_ART[room.id] ?? gatehouseUrl} alt={room.title} />
         <div className="room-number">{index + 1}</div>
@@ -130,18 +138,19 @@ function RoomArtCard({
       </div>
     </article>
   );
-}
+});
 
-function TeamJourney({ team, progress, roomCount }: { team: TeamId; progress: number; roomCount: number }) {
+const TeamJourney = memo(function TeamJourney({ team, progress, roomCount }: { team: TeamId; progress: number; roomCount: number }) {
   const percent = Math.min(100, Math.round((progress / roomCount) * 100));
+  const meterStyle = useMemo(() => ({ width: `${percent}%` }), [percent]);
   return (
     <div className={`team-journey ${team}`}>
       <img src={PAWN_ART[team]} alt="" />
       <div>
         <span>{TEAM_NAME[team]}</span>
-        <div className="journey-meter"><i style={{ width: `${percent}%` }} /></div>
+        <div className="journey-meter"><i style={meterStyle} /></div>
       </div>
       <strong>{progress}/{roomCount}</strong>
     </div>
   );
-}
+});

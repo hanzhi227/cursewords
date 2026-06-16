@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useRef, useState } from "react";
+import { lazy, memo, Suspense, useEffect, useMemo, useRef, useState } from "react";
 import { io, type Socket } from "socket.io-client";
 import type { AttemptResult, ClientActionResult, DeckMode, GameSetup, Player, PlayerView, RoomCreateResult, TeamId, TeamMessage, WordSource } from "./shared/types";
 import { normalizeRoomCode } from "./shared/roomCode";
@@ -9,7 +9,8 @@ import monsterUrl from "./assets/monster.svg";
 import trapUrl from "./assets/trap.svg";
 import logoUrl from "./assets/logo-mark.svg";
 import doorUrl from "./assets/room-door.svg";
-import { DungeonBoard } from "./components/DungeonBoard";
+
+const DungeonBoard = lazy(() => import("./components/DungeonBoard").then((module) => ({ default: module.DungeonBoard })));
 
 type ConnectionMode = "home" | "connecting" | "connected";
 type AuthConfig = {
@@ -332,10 +333,6 @@ function Shell({
 }) {
   return (
     <div className="app-shell">
-      <div className="mist mist-a" />
-      <div className="mist mist-b" />
-      <div className="torch-glow torch-glow-left" />
-      <div className="torch-glow torch-glow-right" />
       {children}
       {notice && (
         <button className="notice" onClick={clearNotice} type="button">
@@ -399,7 +396,7 @@ function HomeScreen(props: {
   );
 }
 
-function Feature({ icon, title, copy }: { icon: string; title: string; copy: string }) {
+const Feature = memo(function Feature({ icon, title, copy }: { icon: string; title: string; copy: string }) {
   return (
     <article className="feature-card">
       <img src={icon} alt="" />
@@ -409,7 +406,7 @@ function Feature({ icon, title, copy }: { icon: string; title: string; copy: str
       </div>
     </article>
   );
-}
+});
 
 function GameScreen(props: {
   view: PlayerView;
@@ -461,7 +458,9 @@ function GameScreen(props: {
       ) : (
         <div className="play-layout">
           <section className="board-column">
-            <DungeonBoard view={props.view} />
+            <Suspense fallback={<section className="panel dungeon-board-panel"><p className="eyebrow">Loading board…</p></section>}>
+              <DungeonBoard view={props.view} />
+            </Suspense>
           </section>
           <section className="center-column">
             <PhasePanel view={props.view} action={props.action} />
@@ -492,9 +491,13 @@ function Lobby(props: {
 }) {
   const state = props.view.state;
   const playersByTeam = useMemo(() => groupPlayersByTeam(state.players), [state.players]);
+  const customWords = useMemo(() => parseCustomWords(props.customWordsText), [props.customWordsText]);
+  const setup = useMemo(
+    () => buildGameSetup(props.deckMode, props.wordSource, customWords),
+    [props.deckMode, props.wordSource, customWords]
+  );
   const self = state.players.find((player) => player.id === props.view.private.playerId);
-  const setup = buildGameSetup(props.deckMode, props.wordSource, props.customWordsText);
-  const canUseDeck = canStartWithCustomWords(props.wordSource, props.customWordsText);
+  const canUseDeck = canStartWithCustomWords(props.wordSource, customWords);
   const emberHasPlayers = playersByTeam.ember.some((player) => player.connected);
   const frostHasPlayers = playersByTeam.frost.some((player) => player.connected);
   const connectedTeamPlayers = state.players.filter((player) => player.connected && player.team);
@@ -502,6 +505,16 @@ function Lobby(props: {
   const canStart = props.view.private.canHost && canUseDeck && emberHasPlayers && frostHasPlayers && allTeamPlayersReady;
   const startDisabled = !canStart;
   const selfReady = Boolean(self && state.lobbyReadyByPlayer[self.id]);
+  const readyChecklistItems = useMemo(
+    () => [
+      { label: "Ember has players", done: emberHasPlayers },
+      { label: "Frost has players", done: frostHasPlayers },
+      { label: "Teamed players ready", done: allTeamPlayersReady },
+      { label: "Word deck valid", done: canUseDeck },
+      { label: "You are host", done: props.view.private.canHost }
+    ],
+    [emberHasPlayers, frostHasPlayers, allTeamPlayersReady, canUseDeck, props.view.private.canHost]
+  );
 
   return (
     <section className="lobby-grid">
@@ -555,15 +568,7 @@ function Lobby(props: {
         <img src={trapUrl} alt="" />
         <h2>Host Controls</h2>
         <p>Start when both teams have connected players and every teamed player is ready.</p>
-        <ReadyChecklist
-          items={[
-            { label: "Ember has players", done: emberHasPlayers },
-            { label: "Frost has players", done: frostHasPlayers },
-            { label: "Teamed players ready", done: allTeamPlayersReady },
-            { label: "Word deck valid", done: canUseDeck },
-            { label: "You are host", done: props.view.private.canHost }
-          ]}
-        />
+        <ReadyChecklist items={readyChecklistItems} />
         <button
           className="primary-button lobby-start-button"
           disabled={startDisabled}
@@ -603,7 +608,7 @@ function CustomWordsPanel(props: {
   deckMode: DeckMode;
   setDeckMode: (mode: DeckMode) => void;
 }) {
-  const customWords = parseCustomWords(props.customWordsText);
+  const customWords = useMemo(() => parseCustomWords(props.customWordsText), [props.customWordsText]);
   return (
     <div className="custom-words-panel">
       <div className="settings-grid">
@@ -654,7 +659,7 @@ function CustomWordsPanel(props: {
   );
 }
 
-function ReadyChecklist({ items }: { items: { label: string; done: boolean }[] }) {
+const ReadyChecklist = memo(function ReadyChecklist({ items }: { items: { label: string; done: boolean }[] }) {
   return (
     <div className="ready-checklist">
       {items.map((item) => (
@@ -665,7 +670,7 @@ function ReadyChecklist({ items }: { items: { label: string; done: boolean }[] }
       ))}
     </div>
   );
-}
+});
 
 function PhasePanel({ view, action }: { view: PlayerView; action: (event: string, payload?: unknown) => void }) {
   const { state } = view;
@@ -997,17 +1002,19 @@ function RevealGrid({ view }: { view: PlayerView }) {
   );
 }
 
-function TeamPanel({ team, view, action }: { team: TeamId; view: PlayerView; action: (event: string, payload?: unknown) => void }) {
+const TeamPanel = memo(function TeamPanel({ team, view, action }: { team: TeamId; view: PlayerView; action: (event: string, payload?: unknown) => void }) {
   const members = view.state.players.filter((player) => player.team === team);
   const teamState = view.state.teams[team];
   const clueGiverId = view.state.round?.clueGivers[team];
+  const progressPercent = (teamState.progress / view.state.rooms.length) * 100;
+  const progressStyle = useMemo(() => ({ width: `${progressPercent}%` }), [progressPercent]);
   return (
     <section className={`panel team-panel ${team}`}>
       <div className="panel-heading">
         <span>{TEAM_LABEL[team]}</span>
         <strong>{teamState.score}</strong>
       </div>
-      <div className="progress-bar"><span style={{ width: `${(teamState.progress / view.state.rooms.length) * 100}%` }} /></div>
+      <div className="progress-bar"><span style={progressStyle} /></div>
       <div className="player-stack">
         {members.map((player) => <PlayerBadge player={player} key={player.id} active={player.id === clueGiverId} />)}
         {members.length === 0 && <span className="empty-slot">No players</span>}
@@ -1017,18 +1024,18 @@ function TeamPanel({ team, view, action }: { team: TeamId; view: PlayerView; act
       )}
     </section>
   );
-}
+});
 
-function EventLog({ log }: { log: string[] }) {
+const EventLog = memo(function EventLog({ log }: { log: string[] }) {
   return (
     <section className="panel event-log">
       <div className="panel-heading"><span>Table Log</span></div>
       {log.length === 0 ? <p>No dungeon events yet.</p> : log.map((entry, index) => <p key={`${index}-${entry}`}>{entry}</p>)}
     </section>
   );
-}
+});
 
-function PlayerBadge({ player, active = false, ready }: { player: Player; active?: boolean; ready?: boolean }) {
+const PlayerBadge = memo(function PlayerBadge({ player, active = false, ready }: { player: Player; active?: boolean; ready?: boolean }) {
   return (
     <div className={`player-badge ${player.connected ? "connected" : "offline"} ${active ? "active" : ""}`}>
       <span>{player.name}</span>
@@ -1037,16 +1044,16 @@ function PlayerBadge({ player, active = false, ready }: { player: Player; active
       {ready !== undefined && <em className={ready ? "ready" : "pending"}>{ready ? "ready" : "not ready"}</em>}
     </div>
   );
-}
+});
 
-function SecretWord({ word, label, urgent = false }: { word?: string; label: string; urgent?: boolean }) {
+const SecretWord = memo(function SecretWord({ word, label, urgent = false }: { word?: string; label: string; urgent?: boolean }) {
   return (
     <div className={`secret-word ${urgent ? "urgent" : ""}`}>
       <span>{label}</span>
       <strong>{word ?? "Hidden"}</strong>
     </div>
   );
-}
+});
 
 function Timer({ deadline, serverTime }: { deadline?: number; serverTime: number }) {
   const [now, setNow] = useState(Date.now());
@@ -1056,12 +1063,38 @@ function Timer({ deadline, serverTime }: { deadline?: number; serverTime: number
     setClockOffset(Date.now() - serverTime);
   }, [serverTime, deadline]);
 
-  useEffect(() => {
-    const interval = window.setInterval(() => setNow(Date.now()), 200);
-    return () => window.clearInterval(interval);
-  }, []);
   const estimatedServerNow = now - clockOffset;
   const remaining = Math.max(0, Math.ceil(((deadline ?? serverTime) - estimatedServerNow) / 1000));
+
+  useEffect(() => {
+    if (!deadline) return;
+
+    const getRemaining = () =>
+      Math.max(0, Math.ceil((deadline - (Date.now() - clockOffset)) / 1000));
+
+    if (getRemaining() <= 0) return;
+
+    const tick = () => setNow(Date.now());
+    const msUntilNextSecond = 1000 - (Date.now() % 1000);
+    let intervalId: ReturnType<typeof window.setInterval>;
+
+    const timeoutId = window.setTimeout(() => {
+      tick();
+      if (getRemaining() <= 0) return;
+      intervalId = window.setInterval(() => {
+        tick();
+        if (getRemaining() <= 0 && intervalId) {
+          window.clearInterval(intervalId);
+        }
+      }, 1000);
+    }, msUntilNextSecond);
+
+    return () => {
+      window.clearTimeout(timeoutId);
+      if (intervalId) window.clearInterval(intervalId);
+    };
+  }, [deadline, clockOffset]);
+
   const danger = remaining <= 10;
   return (
     <div className={`timer ${danger ? "danger" : ""}`}>
@@ -1072,7 +1105,7 @@ function Timer({ deadline, serverTime }: { deadline?: number; serverTime: number
   );
 }
 
-function AttemptResultCard({ team, attempt }: { team: TeamId; attempt?: { result: AttemptResult; trap?: string } }) {
+const AttemptResultCard = memo(function AttemptResultCard({ team, attempt }: { team: TeamId; attempt?: { result: AttemptResult; trap?: string } }) {
   return (
     <article className={`attempt-card ${team} ${attempt?.result ?? "pending"}`}>
       <span>{TEAM_LABEL[team]}</span>
@@ -1080,7 +1113,7 @@ function AttemptResultCard({ team, attempt }: { team: TeamId; attempt?: { result
       {attempt?.trap && <small>Trap: {attempt.trap}</small>}
     </article>
   );
-}
+});
 
 function groupPlayersByTeam(players: Player[]) {
   return {
@@ -1115,16 +1148,16 @@ function parseCustomWords(text: string) {
   return words.slice(0, 300);
 }
 
-function buildGameSetup(deckMode: DeckMode, wordSource: WordSource, customWordsText: string): GameSetup {
+function buildGameSetup(deckMode: DeckMode, wordSource: WordSource, customWords: string[]): GameSetup {
   return {
     deckMode,
     wordSource,
-    customWords: parseCustomWords(customWordsText)
+    customWords
   };
 }
 
-function canStartWithCustomWords(wordSource: WordSource, customWordsText: string) {
-  return wordSource !== "custom" || parseCustomWords(customWordsText).length >= 2;
+function canStartWithCustomWords(wordSource: WordSource, customWords: string[]) {
+  return wordSource !== "custom" || customWords.length >= 2;
 }
 
 function parseStoredWordSource(value: string | null): WordSource {
