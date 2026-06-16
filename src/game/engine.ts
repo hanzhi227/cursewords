@@ -85,6 +85,13 @@ export class GameEngine {
 
   disconnectPlayer(playerId: string) {
     const player = this.requirePlayer(playerId);
+    if (this.state.phase === "lobby") {
+      this.state.players = this.state.players.filter((candidate) => candidate.id !== playerId);
+      delete this.state.lobbyReadyByPlayer[playerId];
+      this.log(`${player.name} left the lobby.`);
+      return;
+    }
+
     player.connected = false;
     this.state.lobbyReadyByPlayer[playerId] = false;
     this.log(`${player.name} disconnected.`);
