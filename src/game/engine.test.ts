@@ -132,17 +132,66 @@ describe("GameEngine", () => {
     expect(engine.snapshot().lobbyReadyByPlayer.host).toBe(false);
   });
 
-  it("removes players from the roster when they leave in the lobby", () => {
+  it("restores the same player with team and readiness when the token returns", () => {
+    const engine = new GameEngine();
+    engine.joinPlayer("player-token", "Host", true);
+    engine.chooseTeam("player-token", "ember");
+    engine.setLobbyReady("player-token", true);
+    engine.disconnectPlayer("player-token");
+
+    const result = engine.joinPlayer("player-token", "Host Again", false);
+    const snapshot = engine.snapshot();
+    const player = snapshot.players.find((candidate) => candidate.id === "player-token");
+
+    expect(result.playerId).toBe("player-token");
+    expect(snapshot.players).toHaveLength(1);
+    expect(player).toMatchObject({
+      name: "Host Again",
+      team: "ember",
+      connected: true,
+      isHost: true
+    });
+    expect(snapshot.lobbyReadyByPlayer["player-token"]).toBe(true);
+  });
+
+  it("transfers host to the oldest connected player when the host disconnects", () => {
     const engine = new GameEngine();
     engine.joinPlayer("host", "Host", true);
     engine.joinPlayer("guest", "Guest", false);
-    engine.chooseTeam("guest", "frost");
-    engine.setLobbyReady("guest", true);
+    engine.joinPlayer("third", "Third", false);
 
-    engine.disconnectPlayer("guest");
+    engine.disconnectPlayer("host");
 
-    expect(engine.snapshot().players.map((player) => player.name)).toEqual(["Host"]);
-    expect(engine.snapshot().lobbyReadyByPlayer.guest).toBeUndefined();
+    const players = engine.snapshot().players;
+    expect(players.find((player) => player.id === "host")?.isHost).toBe(false);
+    expect(players.find((player) => player.id === "guest")?.isHost).toBe(true);
+    expect(players.find((player) => player.id === "third")?.isHost).toBe(false);
+  });
+
+  it("keeps host with a disconnected player when nobody else is connected", () => {
+    const engine = new GameEngine();
+    engine.joinPlayer("host", "Host", true);
+
+    engine.disconnectPlayer("host");
+
+    const offlineHost = engine.snapshot().players.find((player) => player.id === "host");
+    expect(offlineHost).toMatchObject({ connected: false, isHost: true });
+
+    engine.joinPlayer("host", "Host", false);
+    expect(engine.snapshot().players.find((player) => player.id === "host")).toMatchObject({ connected: true, isHost: true });
+  });
+
+  it("does not let the old host reclaim host after transfer", () => {
+    const engine = new GameEngine();
+    engine.joinPlayer("host", "Host", true);
+    engine.joinPlayer("guest", "Guest", false);
+
+    engine.disconnectPlayer("host");
+    engine.joinPlayer("host", "Host", true);
+
+    const players = engine.snapshot().players;
+    expect(players.find((player) => player.id === "host")).toMatchObject({ connected: true, isHost: false });
+    expect(players.find((player) => player.id === "guest")).toMatchObject({ connected: true, isHost: true });
   });
 
   it("keeps in-game disconnected players visible as offline", () => {

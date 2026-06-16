@@ -62,39 +62,37 @@ export class GameEngine {
     this.state = this.createInitialState(settings);
   }
 
-  joinPlayer(socketId: string, rawName?: string, isHost = false) {
-    const existing = this.state.players.find((player) => player.id === socketId);
+  joinPlayer(playerToken: string, rawName?: string, isHost = false) {
+    const playerId = cleanPlayerId(playerToken);
+    if (!playerId) throw new Error("Player token is required.");
+
+    const existing = this.state.players.find((player) => player.id === playerId);
     if (existing) {
       existing.connected = true;
       existing.name = cleanName(rawName) || existing.name;
-      existing.isHost = existing.isHost || isHost;
+      if (isHost) this.grantHostIfVacant(existing);
       return { playerId: existing.id };
     }
 
     const player: Player = {
-      id: socketId,
+      id: playerId,
       name: cleanName(rawName) || `Wanderer ${this.state.players.length + 1}`,
-      isHost,
+      isHost: false,
       connected: true,
       joinedAt: Date.now()
     };
     this.state.players.push(player);
+    if (isHost) this.grantHostIfVacant(player);
     this.log(`${player.name} entered the tavern.`);
     return { playerId: player.id };
   }
 
   disconnectPlayer(playerId: string) {
     const player = this.requirePlayer(playerId);
-    if (this.state.phase === "lobby") {
-      this.state.players = this.state.players.filter((candidate) => candidate.id !== playerId);
-      delete this.state.lobbyReadyByPlayer[playerId];
-      this.log(`${player.name} left the lobby.`);
-      return;
-    }
-
+    const wasHost = player.isHost;
     player.connected = false;
-    this.state.lobbyReadyByPlayer[playerId] = false;
     this.log(`${player.name} disconnected.`);
+    if (wasHost) this.transferHostFrom(player);
   }
 
   setName(playerId: string, rawName: string) {
@@ -521,6 +519,25 @@ export class GameEngine {
     if (!player.isHost) throw new Error("Only the host can do that.");
   }
 
+  private grantHostIfVacant(player: Player) {
+    const currentHost = this.state.players.find((candidate) => candidate.isHost && candidate.id !== player.id);
+    if (currentHost) return;
+    player.isHost = true;
+  }
+
+  private transferHostFrom(player: Player) {
+    const nextHost = this.state.players
+      .filter((candidate) => candidate.connected && candidate.id !== player.id)
+      .sort((a, b) => a.joinedAt - b.joinedAt)[0];
+
+    if (!nextHost) return;
+
+    for (const candidate of this.state.players) {
+      candidate.isHost = candidate.id === nextHost.id;
+    }
+    this.log(`${nextHost.name} is now the host.`);
+  }
+
   private applySetup(setup: GameSetup) {
     const customWords = setup.customWords ? normalizeCustomWords(setup.customWords) : this.state.customWords;
     const deckMode = parseDeckMode(setup.deckMode, this.state.settings.deckMode);
@@ -594,6 +611,10 @@ export function otherTeam(team: TeamId): TeamId {
 
 function cleanName(name?: string) {
   return (name ?? "").trim().replace(/\s+/g, " ").slice(0, 24);
+}
+
+function cleanPlayerId(playerId: string) {
+  return playerId.trim().replace(/[^a-zA-Z0-9_-]/g, "").slice(0, 80);
 }
 
 function cleanTrap(trap?: string) {

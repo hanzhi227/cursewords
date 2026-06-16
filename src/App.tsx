@@ -27,6 +27,9 @@ const TEAM_MOTTO: Record<TeamId, string> = {
   frost: "Cold reads. Sharp traps."
 };
 
+const PLAYER_TOKEN_PREFIX = "dwt:playerToken:";
+const HOST_TOKEN_PREFIX = "dwt:hostToken:";
+
 export default function App() {
   const [name, setName] = useState(() => localStorage.getItem("dwt:name") || "");
   const [playPassword, setPlayPassword] = useState(() => localStorage.getItem("dwt:playPassword") || "");
@@ -41,6 +44,19 @@ export default function App() {
   const [wordSource, setWordSource] = useState<WordSource>(() => parseStoredWordSource(localStorage.getItem("dwt:wordSource")));
   const [deckMode, setDeckMode] = useState<DeckMode>(() => parseStoredDeckMode(localStorage.getItem("dwt:deckMode")));
   const socketRef = useRef<Socket | null>(null);
+  const roomInfoRef = useRef(roomInfo);
+  const nameRef = useRef(name);
+  const joinedRoomRef = useRef(false);
+  const joiningRoomRef = useRef(false);
+  const rejoinCurrentRoomRef = useRef<() => Promise<void>>(async () => {});
+
+  useEffect(() => {
+    roomInfoRef.current = roomInfo;
+  }, [roomInfo]);
+
+  useEffect(() => {
+    nameRef.current = name;
+  }, [name]);
 
   useEffect(() => {
     localStorage.setItem("dwt:name", name);
@@ -85,19 +101,63 @@ export default function App() {
     };
   }, []);
 
+  async function rejoinCurrentRoom() {
+    const socket = socketRef.current;
+    const info = roomInfoRef.current;
+    if (!socket?.connected || !info?.roomCode || joiningRoomRef.current) return;
+
+    const normalized = normalizeRoomCode(info.roomCode);
+    const playerToken = getStoredPlayerToken(normalized);
+    if (!playerToken) return;
+
+    const hostToken = info.hostToken || getStoredHostToken(normalized);
+
+    try {
+      await emitJoinRoom(socket, normalized, nameRef.current, playerToken, hostToken);
+      setNotice(null);
+    } catch (error) {
+      joinedRoomRef.current = false;
+      socket.disconnect();
+      socketRef.current = null;
+      setConnectionMode("home");
+      setView(null);
+      setRoomInfo(null);
+      setNotice(errorMessage(error));
+    }
+  }
+
+  rejoinCurrentRoomRef.current = rejoinCurrentRoom;
+
   function bindSocket(socket: Socket) {
     socket.on("view", (nextView: PlayerView) => setView(nextView));
     socket.on("notice", (message: string) => setNotice(message));
+    socket.on("connect", () => {
+      if (!joinedRoomRef.current || joiningRoomRef.current) return;
+      void rejoinCurrentRoomRef.current();
+    });
     socket.on("connect_error", (error) => {
       if (error.message.toLowerCase().includes("password")) {
         lockPlayPassword(error.message);
         return;
       }
+      if (joinedRoomRef.current) {
+        setNotice("Connection lost. Reconnecting...");
+        return;
+      }
       setConnectionMode("home");
       setNotice(error.message);
     });
-    socket.on("disconnect", () => {
-      setNotice("Disconnected from the dungeon.");
+    socket.on("disconnect", (reason) => {
+      if (reason === "io client disconnect") return;
+      setNotice("Connection lost. Reconnecting...");
+    });
+    socket.io.on("reconnect_failed", () => {
+      if (!joinedRoomRef.current) return;
+      joinedRoomRef.current = false;
+      setConnectionMode("home");
+      setView(null);
+      setRoomInfo(null);
+      setNotice("Could not reconnect to the dungeon.");
     });
   }
 
@@ -137,12 +197,14 @@ export default function App() {
     }
 
     setConnectionMode("connecting");
+    joiningRoomRef.current = true;
     try {
+      const playerToken = createPlayerToken();
       const socket = connectSocket();
       await waitForSocket(socket);
 
       const info = await new Promise<RoomCreateResult>((resolve, reject) => {
-        socket.emit("createRoom", { name: name || undefined }, (result: RoomCreateResult | ClientActionResult) => {
+        socket.emit("createRoom", { name: name || undefined, playerToken }, (result: RoomCreateResult | ClientActionResult) => {
           if ("roomCode" in result && result.roomCode) {
             resolve(result);
             return;
@@ -151,13 +213,19 @@ export default function App() {
         });
       });
 
+      storePlayerToken(info.roomCode, playerToken);
+      storeHostToken(info.roomCode, info.hostToken);
       setRoomInfo(info);
+      joinedRoomRef.current = true;
       setConnectionMode("connected");
     } catch (error) {
+      joinedRoomRef.current = false;
       socketRef.current?.disconnect();
       socketRef.current = null;
       setConnectionMode("home");
       setNotice(errorMessage(error));
+    } finally {
+      joiningRoomRef.current = false;
     }
   }
 
@@ -174,27 +242,27 @@ export default function App() {
     }
 
     setConnectionMode("connecting");
+    joiningRoomRef.current = true;
     try {
+      const playerToken = getStoredPlayerToken(normalized) ?? createPlayerToken();
+      const hostToken = getStoredHostToken(normalized);
       const socket = connectSocket();
       await waitForSocket(socket);
 
-      await new Promise<void>((resolve, reject) => {
-        socket.emit("joinRoom", { roomCode: normalized, name: name || undefined }, (result: ClientActionResult) => {
-          if (result.ok) {
-            resolve();
-            return;
-          }
-          reject(new Error(result.error ?? "Could not join room."));
-        });
-      });
+      await emitJoinRoom(socket, normalized, name, playerToken, hostToken);
 
-      setRoomInfo({ roomCode: normalized, hostToken: "" });
+      storePlayerToken(normalized, playerToken);
+      setRoomInfo({ roomCode: normalized, hostToken: hostToken ?? "" });
+      joinedRoomRef.current = true;
       setConnectionMode("connected");
     } catch (error) {
+      joinedRoomRef.current = false;
       socketRef.current?.disconnect();
       socketRef.current = null;
       setConnectionMode("home");
       setNotice(errorMessage(error));
+    } finally {
+      joiningRoomRef.current = false;
     }
   }
 
@@ -210,6 +278,7 @@ export default function App() {
   }
 
   function leave() {
+    joinedRoomRef.current = false;
     socketRef.current?.disconnect();
     socketRef.current = null;
     setView(null);
@@ -229,6 +298,7 @@ export default function App() {
   }
 
   function lockPlayPassword(message: string) {
+    joinedRoomRef.current = false;
     socketRef.current?.disconnect();
     socketRef.current = null;
     setView(null);
@@ -1247,6 +1317,81 @@ function parseStoredWordSource(value: string | null): WordSource {
 function parseStoredDeckMode(value: string | null): DeckMode {
   if (value === "mixed" || value === "common" || value === "arcane") return value;
   return "mixed";
+}
+
+function emitJoinRoom(socket: Socket, roomCode: string, playerName: string, playerToken: string, hostToken?: string) {
+  return new Promise<void>((resolve, reject) => {
+    socket.emit(
+      "joinRoom",
+      {
+        roomCode,
+        name: playerName || undefined,
+        playerToken,
+        hostToken: hostToken || undefined
+      },
+      (result: ClientActionResult) => {
+        if (result.ok) {
+          resolve();
+          return;
+        }
+        reject(new Error(result.error ?? "Could not join room."));
+      }
+    );
+  });
+}
+
+function playerTokenStorageKey(roomCode: string) {
+  return `${PLAYER_TOKEN_PREFIX}${normalizeRoomCode(roomCode)}`;
+}
+
+function hostTokenStorageKey(roomCode: string) {
+  return `${HOST_TOKEN_PREFIX}${normalizeRoomCode(roomCode)}`;
+}
+
+function getStoredPlayerToken(roomCode: string) {
+  try {
+    return localStorage.getItem(playerTokenStorageKey(roomCode)) || undefined;
+  } catch {
+    return undefined;
+  }
+}
+
+function storePlayerToken(roomCode: string, playerToken: string) {
+  try {
+    localStorage.setItem(playerTokenStorageKey(roomCode), playerToken);
+  } catch {
+    // Reconnect still works for the current socket even when storage is unavailable.
+  }
+}
+
+function getStoredHostToken(roomCode: string) {
+  try {
+    return localStorage.getItem(hostTokenStorageKey(roomCode)) || undefined;
+  } catch {
+    return undefined;
+  }
+}
+
+function storeHostToken(roomCode: string, hostToken: string) {
+  try {
+    localStorage.setItem(hostTokenStorageKey(roomCode), hostToken);
+  } catch {
+    // Host reclaim on reconnect still works while the current session is alive.
+  }
+}
+
+function createPlayerToken() {
+  if (typeof crypto !== "undefined" && typeof crypto.randomUUID === "function") {
+    return crypto.randomUUID();
+  }
+
+  if (typeof crypto !== "undefined" && typeof crypto.getRandomValues === "function") {
+    const bytes = new Uint8Array(16);
+    crypto.getRandomValues(bytes);
+    return Array.from(bytes, (byte) => byte.toString(16).padStart(2, "0")).join("");
+  }
+
+  return `${Date.now().toString(36)}-${Math.random().toString(36).slice(2)}`;
 }
 
 function phaseTitle(phase: string) {

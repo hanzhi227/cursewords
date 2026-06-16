@@ -8,6 +8,11 @@ type Ack<T = ClientActionResult> = (result: T) => void;
 type RoomManagerOptions = {
   playPassword?: string;
 };
+type JoinPayload = {
+  name?: string;
+  hostToken?: string;
+  playerToken?: string;
+};
 
 const ROOM_CODE_CHARS = "ABCDEFGHJKLMNPQRSTUVWXYZ23456789";
 const ROOM_CODE_LENGTH = 6;
@@ -21,6 +26,7 @@ export class GameRoom {
   readonly engine = new GameEngine();
   private timer: NodeJS.Timeout | null = null;
   private emptyTimer: NodeJS.Timeout | null = null;
+  private activeSocketsByPlayer = new Map<string, Set<string>>();
 
   constructor(code: string, hostToken: string) {
     this.code = code;
@@ -31,23 +37,29 @@ export class GameRoom {
     return Boolean(token && token === this.hostToken);
   }
 
-  joinSocket(socket: Socket, io: SocketServer, options: { name?: string; hostToken?: string }) {
+  joinSocket(socket: Socket, io: SocketServer, options: JoinPayload) {
     this.cancelEmptyTimer();
     const isHost = this.isHostToken(options.hostToken);
-    const result = this.engine.joinPlayer(socket.id, options.name, isHost);
+    const result = this.engine.joinPlayer(options.playerToken || socket.id, options.name, isHost);
+    const previousPlayerId = socket.data.playerId as string | undefined;
+    if (previousPlayerId && previousPlayerId !== result.playerId && this.detachSocket(previousPlayerId, socket.id)) {
+      this.engine.disconnectPlayer(previousPlayerId);
+    }
     socket.data.playerId = result.playerId;
     socket.data.roomCode = this.code;
+    this.attachSocket(result.playerId, socket.id);
     socket.join(this.code);
     this.emitViews(io);
     return result;
   }
 
   bindSocket(socket: Socket, io: SocketServer, onEmpty?: (code: string) => void) {
-    socket.on("join", (payload: { name?: string; hostToken?: string } | undefined, ack?: Ack) => {
+    socket.on("join", (payload: JoinPayload | undefined, ack?: Ack) => {
       try {
         this.joinSocket(socket, io, {
           name: payload?.name,
-          hostToken: payload?.hostToken
+          hostToken: payload?.hostToken,
+          playerToken: payload?.playerToken
         });
         ack?.({ ok: true });
       } catch (error) {
@@ -107,7 +119,7 @@ export class GameRoom {
 
     socket.on("disconnect", () => {
       const playerId = socket.data.playerId as string | undefined;
-      if (playerId) this.engine.disconnectPlayer(playerId);
+      if (playerId && this.detachSocket(playerId, socket.id)) this.engine.disconnectPlayer(playerId);
       this.emitViews(io);
       this.scheduleDestroyWhenEmpty(onEmpty);
     });
@@ -162,6 +174,7 @@ export class GameRoom {
     if (this.timer) clearTimeout(this.timer);
     this.cancelEmptyTimer();
     this.timer = null;
+    this.activeSocketsByPlayer.clear();
   }
 
   private scheduleDestroyWhenEmpty(onEmpty?: (code: string) => void) {
@@ -175,6 +188,21 @@ export class GameRoom {
   private cancelEmptyTimer() {
     if (this.emptyTimer) clearTimeout(this.emptyTimer);
     this.emptyTimer = null;
+  }
+
+  private attachSocket(playerId: string, socketId: string) {
+    const socketIds = this.activeSocketsByPlayer.get(playerId) ?? new Set<string>();
+    socketIds.add(socketId);
+    this.activeSocketsByPlayer.set(playerId, socketIds);
+  }
+
+  private detachSocket(playerId: string, socketId: string) {
+    const socketIds = this.activeSocketsByPlayer.get(playerId);
+    if (!socketIds) return true;
+    socketIds.delete(socketId);
+    if (socketIds.size > 0) return false;
+    this.activeSocketsByPlayer.delete(playerId);
+    return true;
   }
 
   private hasConnectedPlayers() {
@@ -203,13 +231,13 @@ export class RoomManager {
     }
 
     io.on("connection", (socket) => {
-      socket.on("createRoom", (payload: { name?: string } | undefined, ack?: Ack<RoomCreateResult | ClientActionResult>) => {
+      socket.on("createRoom", (payload: { name?: string; playerToken?: string } | undefined, ack?: Ack<RoomCreateResult | ClientActionResult>) => {
         try {
           this.assertSocketAvailable(socket);
           const room = this.allocateRoom();
           room.bindSocket(socket, io, (code) => this.destroyRoom(code));
           socket.data.boundRoom = room.code;
-          room.joinSocket(socket, io, { name: payload?.name, hostToken: room.hostToken });
+          room.joinSocket(socket, io, { name: payload?.name, hostToken: room.hostToken, playerToken: payload?.playerToken });
 
           const result: RoomCreateResult = {
             roomCode: room.code,
@@ -222,7 +250,7 @@ export class RoomManager {
         }
       });
 
-      socket.on("joinRoom", (payload: { roomCode?: string; name?: string; hostToken?: string } | undefined, ack?: Ack) => {
+      socket.on("joinRoom", (payload: { roomCode?: string; name?: string; hostToken?: string; playerToken?: string } | undefined, ack?: Ack) => {
         try {
           this.assertSocketAvailable(socket);
           const roomCode = normalizeRoomCode(payload?.roomCode);
@@ -235,7 +263,8 @@ export class RoomManager {
           socket.data.boundRoom = room.code;
           room.joinSocket(socket, io, {
             name: payload?.name,
-            hostToken: payload?.hostToken
+            hostToken: payload?.hostToken,
+            playerToken: payload?.playerToken
           });
           ack?.({ ok: true });
         } catch (error) {

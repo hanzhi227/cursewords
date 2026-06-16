@@ -3,6 +3,7 @@ import { describe, expect, it, afterEach } from "vitest";
 import { Server as SocketServer } from "socket.io";
 import { io as createClient, type Socket as ClientSocket } from "socket.io-client";
 import { GameRoom, RoomManager } from "./roomManager";
+import type { PlayerView } from "../src/shared/types";
 
 type TestServer = {
   httpServer: http.Server;
@@ -68,8 +69,14 @@ function emitAck<T>(socket: ClientSocket, event: string, payload: unknown = {}) 
 }
 
 function waitForView(socket: ClientSocket) {
-  return new Promise<unknown>((resolve) => {
+  return new Promise<PlayerView>((resolve) => {
     socket.once("view", resolve);
+  });
+}
+
+function waitForServerTurn() {
+  return new Promise<void>((resolve) => {
+    setTimeout(resolve, 20);
   });
 }
 
@@ -156,6 +163,104 @@ describe("RoomManager", () => {
     });
 
     host.disconnect();
+    guest.disconnect();
+  });
+
+  it("restores a player by token through a new socket", async () => {
+    server = await startTestServer();
+    const host = await connectClient(server.url);
+    const hostViewPromise = waitForView(host);
+
+    const created = await emitAck<{ roomCode: string; hostToken: string }>(host, "createRoom", {
+      name: "Host",
+      playerToken: "host-token"
+    });
+    await hostViewPromise;
+    await emitAck(host, "chooseTeam", { team: "ember" });
+    host.disconnect();
+    await waitForServerTurn();
+
+    const returned = await connectClient(server.url);
+    const returnedViewPromise = waitForView(returned);
+    const joined = await emitAck<{ ok: boolean }>(returned, "joinRoom", {
+      roomCode: created.roomCode,
+      name: "Host Again",
+      playerToken: "host-token"
+    });
+
+    expect(joined.ok).toBe(true);
+    const returnedView = await returnedViewPromise;
+    expect(returnedView.private).toMatchObject({ playerId: "host-token", canHost: true, team: "ember" });
+    expect(returnedView.state.players).toEqual([
+      expect.objectContaining({ id: "host-token", name: "Host Again", team: "ember", connected: true, isHost: true })
+    ]);
+
+    returned.disconnect();
+  });
+
+  it("keeps a reconnected player online when an older socket disconnects", async () => {
+    server = await startTestServer();
+    const firstSocket = await connectClient(server.url);
+    const firstViewPromise = waitForView(firstSocket);
+
+    const created = await emitAck<{ roomCode: string; hostToken: string }>(firstSocket, "createRoom", {
+      name: "Host",
+      playerToken: "host-token"
+    });
+    await firstViewPromise;
+
+    const secondSocket = await connectClient(server.url);
+    const secondViewPromise = waitForView(secondSocket);
+    await emitAck(secondSocket, "joinRoom", {
+      roomCode: created.roomCode,
+      name: "Host",
+      playerToken: "host-token"
+    });
+    await secondViewPromise;
+
+    const updatePromise = waitForView(secondSocket);
+    firstSocket.disconnect();
+    const update = await updatePromise;
+
+    expect(update.state.players).toEqual([
+      expect.objectContaining({ id: "host-token", connected: true, isHost: true })
+    ]);
+
+    secondSocket.disconnect();
+  });
+
+  it("transfers host to the oldest connected socket player when the host disconnects", async () => {
+    server = await startTestServer();
+    const host = await connectClient(server.url);
+    const hostViewPromise = waitForView(host);
+
+    const created = await emitAck<{ roomCode: string; hostToken: string }>(host, "createRoom", {
+      name: "Host",
+      playerToken: "host-token"
+    });
+    await hostViewPromise;
+
+    const guest = await connectClient(server.url);
+    const guestViewPromise = waitForView(guest);
+    await emitAck(guest, "joinRoom", {
+      roomCode: created.roomCode,
+      name: "Guest",
+      playerToken: "guest-token"
+    });
+    await guestViewPromise;
+
+    const transferViewPromise = waitForView(guest);
+    host.disconnect();
+    const transferView = await transferViewPromise;
+
+    expect(transferView.private).toMatchObject({ playerId: "guest-token", canHost: true });
+    expect(transferView.state.players).toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({ id: "host-token", connected: false, isHost: false }),
+        expect.objectContaining({ id: "guest-token", connected: true, isHost: true })
+      ])
+    );
+
     guest.disconnect();
   });
 

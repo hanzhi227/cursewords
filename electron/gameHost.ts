@@ -7,6 +7,11 @@ import { GameEngine } from "../src/game/engine";
 import type { HostStartResult, ClientActionResult, GameSetup } from "../src/shared/types";
 
 type Ack = (result: ClientActionResult) => void;
+type JoinPayload = {
+  name?: string;
+  hostToken?: string;
+  playerToken?: string;
+};
 
 export class GameHost {
   private server: http.Server | null = null;
@@ -15,6 +20,7 @@ export class GameHost {
   private port = 0;
   private hostToken = randomBytes(18).toString("hex");
   private timer: NodeJS.Timeout | null = null;
+  private activeSocketsByPlayer = new Map<string, Set<string>>();
 
   async start(): Promise<HostStartResult> {
     if (this.server && this.io) return this.info();
@@ -55,16 +61,22 @@ export class GameHost {
     this.server = null;
     this.io = null;
     this.engine = new GameEngine();
+    this.activeSocketsByPlayer.clear();
     this.hostToken = randomBytes(18).toString("hex");
     this.port = 0;
   }
 
   private bindSockets(io: SocketServer) {
     io.on("connection", (socket) => {
-      socket.on("join", (payload: { name?: string; hostToken?: string } | undefined, ack?: Ack) => {
+      socket.on("join", (payload: JoinPayload | undefined, ack?: Ack) => {
         const isHost = payload?.hostToken === this.hostToken;
-        const result = this.engine.joinPlayer(socket.id, payload?.name, isHost);
+        const result = this.engine.joinPlayer(payload?.playerToken || socket.id, payload?.name, isHost);
+        const previousPlayerId = socket.data.playerId as string | undefined;
+        if (previousPlayerId && previousPlayerId !== result.playerId && this.detachSocket(previousPlayerId, socket.id)) {
+          this.engine.disconnectPlayer(previousPlayerId);
+        }
         socket.data.playerId = result.playerId;
+        this.attachSocket(result.playerId, socket.id);
         ack?.({ ok: true });
         this.emitViews();
       });
@@ -119,7 +131,7 @@ export class GameHost {
 
       socket.on("disconnect", () => {
         const playerId = socket.data.playerId as string | undefined;
-        if (playerId) this.engine.disconnectPlayer(playerId);
+        if (playerId && this.detachSocket(playerId, socket.id)) this.engine.disconnectPlayer(playerId);
         this.emitViews();
       });
     });
@@ -164,6 +176,21 @@ export class GameHost {
         this.syncTimer();
       }
     }, delay);
+  }
+
+  private attachSocket(playerId: string, socketId: string) {
+    const socketIds = this.activeSocketsByPlayer.get(playerId) ?? new Set<string>();
+    socketIds.add(socketId);
+    this.activeSocketsByPlayer.set(playerId, socketIds);
+  }
+
+  private detachSocket(playerId: string, socketId: string) {
+    const socketIds = this.activeSocketsByPlayer.get(playerId);
+    if (!socketIds) return true;
+    socketIds.delete(socketId);
+    if (socketIds.size > 0) return false;
+    this.activeSocketsByPlayer.delete(playerId);
+    return true;
   }
 }
 
