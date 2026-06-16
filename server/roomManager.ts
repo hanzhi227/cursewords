@@ -12,6 +12,7 @@ type RoomManagerOptions = {
 const ROOM_CODE_CHARS = "ABCDEFGHJKLMNPQRSTUVWXYZ23456789";
 const ROOM_CODE_LENGTH = 6;
 const MAX_ROOMS = 200;
+const EMPTY_ROOM_TTL_MS = 10 * 60 * 1000;
 const AUTH_ERROR = "Invalid play password.";
 
 export class GameRoom {
@@ -19,6 +20,7 @@ export class GameRoom {
   readonly hostToken: string;
   readonly engine = new GameEngine();
   private timer: NodeJS.Timeout | null = null;
+  private emptyTimer: NodeJS.Timeout | null = null;
 
   constructor(code: string, hostToken: string) {
     this.code = code;
@@ -30,6 +32,7 @@ export class GameRoom {
   }
 
   joinSocket(socket: Socket, io: SocketServer, options: { name?: string; hostToken?: string }) {
+    this.cancelEmptyTimer();
     const isHost = this.isHostToken(options.hostToken);
     const result = this.engine.joinPlayer(socket.id, options.name, isHost);
     socket.data.playerId = result.playerId;
@@ -39,7 +42,7 @@ export class GameRoom {
     return result;
   }
 
-  bindSocket(socket: Socket, io: SocketServer) {
+  bindSocket(socket: Socket, io: SocketServer, onEmpty?: (code: string) => void) {
     socket.on("join", (payload: { name?: string; hostToken?: string } | undefined, ack?: Ack) => {
       try {
         this.joinSocket(socket, io, {
@@ -106,6 +109,7 @@ export class GameRoom {
       const playerId = socket.data.playerId as string | undefined;
       if (playerId) this.engine.disconnectPlayer(playerId);
       this.emitViews(io);
+      this.scheduleDestroyWhenEmpty(onEmpty);
     });
   }
 
@@ -156,7 +160,25 @@ export class GameRoom {
 
   destroy() {
     if (this.timer) clearTimeout(this.timer);
+    this.cancelEmptyTimer();
     this.timer = null;
+  }
+
+  private scheduleDestroyWhenEmpty(onEmpty?: (code: string) => void) {
+    if (!onEmpty || this.emptyTimer || this.hasConnectedPlayers()) return;
+    this.emptyTimer = setTimeout(() => {
+      this.emptyTimer = null;
+      if (!this.hasConnectedPlayers()) onEmpty(this.code);
+    }, EMPTY_ROOM_TTL_MS);
+  }
+
+  private cancelEmptyTimer() {
+    if (this.emptyTimer) clearTimeout(this.emptyTimer);
+    this.emptyTimer = null;
+  }
+
+  private hasConnectedPlayers() {
+    return this.engine.snapshot().players.some((player) => player.connected);
   }
 }
 
@@ -185,7 +207,7 @@ export class RoomManager {
         try {
           this.assertSocketAvailable(socket);
           const room = this.allocateRoom();
-          room.bindSocket(socket, io);
+          room.bindSocket(socket, io, (code) => this.destroyRoom(code));
           socket.data.boundRoom = room.code;
           room.joinSocket(socket, io, { name: payload?.name, hostToken: room.hostToken });
 
@@ -209,7 +231,7 @@ export class RoomManager {
           const room = this.rooms.get(roomCode);
           if (!room) throw new Error("Room not found. Check the code and try again.");
 
-          room.bindSocket(socket, io);
+          room.bindSocket(socket, io, (code) => this.destroyRoom(code));
           socket.data.boundRoom = room.code;
           room.joinSocket(socket, io, {
             name: payload?.name,
@@ -245,6 +267,13 @@ export class RoomManager {
     const room = new GameRoom(code, randomBytes(18).toString("hex"));
     this.rooms.set(code, room);
     return room;
+  }
+
+  private destroyRoom(code: string) {
+    const room = this.rooms.get(code);
+    if (!room) return;
+    room.destroy();
+    this.rooms.delete(code);
   }
 }
 

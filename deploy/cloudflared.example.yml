@@ -1,0 +1,11 @@
+# Copy this to your local cloudflared config file and replace the placeholders.
+# Windows default: C:\Users\<you>\.cloudflared\config.yml
+# macOS/Linux default: ~/.cloudflared/config.yml
+
+tunnel: REPLACE_WITH_TUNNEL_ID_OR_NAME
+credentials-file: REPLACE_WITH_CREDENTIALS_JSON_PATH
+
+ingress:
+  - hostname: cursewords.danieldroder.dev
+    service: http://localhost:4949
+  - service: http_status:404
