@@ -40,6 +40,91 @@ CURSEWORDS_PLAY_PASSWORD="your-table-password" npm start
 
 `PLAY_PASSWORD` is also supported as a shorter alias.
 
+On Windows PowerShell, set the password before starting locally:
+
+```powershell
+$env:CURSEWORDS_PLAY_PASSWORD="your-table-password"
+npm start
+```
+
+## Local Cloudflare Tunnel Deploy
+
+Recommended public URL: `https://cursewords.danieldroder.dev`.
+
+This deployment runs the game on a local machine and exposes it through Cloudflare Tunnel. This is preferred over raw router port forwarding because it does not expose your home IP directly and Cloudflare handles HTTPS and WebSockets.
+
+1. Install `cloudflared` on the machine that will host the game.
+2. Authenticate `cloudflared` with the Cloudflare account that owns `danieldroder.dev`:
+
+```bash
+cloudflared tunnel login
+```
+
+3. Create a named tunnel:
+
+```bash
+cloudflared tunnel create cursewords
+```
+
+4. Route the public hostname to the tunnel:
+
+```bash
+cloudflared tunnel route dns cursewords cursewords.danieldroder.dev
+```
+
+5. Copy `deploy/cloudflared.example.yml` to your local Cloudflare config directory and update the tunnel ID and credentials path shown by `cloudflared tunnel create`.
+
+Windows PowerShell example:
+
+```powershell
+Copy-Item deploy/cloudflared.example.yml "$env:USERPROFILE\.cloudflared\config.yml"
+```
+
+6. Build and start the game server:
+
+```bash
+npm install
+npm run build
+CURSEWORDS_PLAY_PASSWORD="your-table-password" npm start
+```
+
+Windows PowerShell:
+
+```powershell
+npm install
+npm run build
+$env:CURSEWORDS_PLAY_PASSWORD="your-table-password"
+npm start
+```
+
+7. In another terminal, start the tunnel:
+
+```bash
+cloudflared tunnel run cursewords
+```
+
+8. Verify these URLs:
+
+```text
+https://cursewords.danieldroder.dev/healthz
+https://cursewords.danieldroder.dev/auth-config
+```
+
+The app uses same-origin Socket.IO, so no extra client endpoint configuration is needed. Cloudflare Tunnel forwards `https://cursewords.danieldroder.dev` to the local Node server at `http://localhost:4949`.
+
+### Running Continuously
+
+For real play sessions, keep both processes running:
+
+- `npm start`
+- `cloudflared tunnel run cursewords`
+
+On Windows, `cloudflared service install` can run the tunnel as a background service. Use Task Scheduler, NSSM, PM2, or another process manager if you also want the Node server to restart automatically.
+
+### Port Forwarding Alternative
+
+Raw port forwarding can work, but Cloudflare Tunnel is safer and simpler. If you use port forwarding instead, use a static LAN IP for the host machine, keep `CURSEWORDS_PLAY_PASSWORD` set, forward only the required HTTP/HTTPS port, and consider restricting inbound traffic to Cloudflare IP ranges.
+
 ## Railway Deploy
 
 This repo includes `railway.json` so Railway builds with `npm run build`, starts with `npm start`, and healthchecks `/healthz`.
@@ -117,4 +202,11 @@ The game view includes a whimsical board-game style dungeon map with original il
 ```bash
 npm test
 npm run build
+npm start
+```
+
+With `npm start` still running, run the smoke test in another terminal:
+
+```bash
+npm run test:smoke
 ```

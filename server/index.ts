@@ -4,8 +4,9 @@ import path from "path";
 import { Server as SocketServer } from "socket.io";
 import { RoomManager } from "./roomManager";
 
-const PORT = Number(process.env.PORT ?? 4949);
-const isProd = process.env.NODE_ENV === "production";
+const parsedPort = Number(process.env.PORT ?? 4949);
+const PORT = Number.isInteger(parsedPort) && parsedPort > 0 && parsedPort <= 65535 ? parsedPort : 4949;
+const serveClient = process.argv.includes("--serve-static") || process.env.NODE_ENV === "production";
 const rootDir = path.resolve(__dirname, "../..");
 const distDir = path.join(rootDir, "dist");
 const playPassword = cleanPassword(process.env.CURSEWORDS_PLAY_PASSWORD ?? process.env.PLAY_PASSWORD);
@@ -25,7 +26,7 @@ const server = http.createServer((req, res) => {
     return;
   }
 
-  if (!isProd) {
+  if (!serveClient) {
     res.writeHead(200, { "content-type": "text/plain" });
     res.end("Cursewords server is running.");
     return;
@@ -41,16 +42,23 @@ const io = new SocketServer(server, {
 roomManager.bind(io);
 
 server.listen(PORT, "0.0.0.0", () => {
-  console.log(`Cursewords server listening on :${PORT} (${isProd ? "production" : "development"})`);
+  console.log(`Cursewords server listening on :${PORT} (${serveClient ? "serving client" : "development"})`);
 });
 
 function serveStatic(req: http.IncomingMessage, res: http.ServerResponse) {
-  const urlPath = req.url?.split("?")[0] ?? "/";
-  const safePath = path.normalize(urlPath).replace(/^(\.\.[/\\])+/, "");
-  const relativePath = safePath === "/" ? "index.html" : safePath.replace(/^\//, "");
-  const filePath = path.join(distDir, relativePath);
+  let pathname = "/";
+  try {
+    pathname = decodeURIComponent(new URL(req.url ?? "/", "http://localhost").pathname);
+  } catch {
+    res.writeHead(400, { "content-type": "text/plain" });
+    res.end("Bad request");
+    return;
+  }
 
-  if (!filePath.startsWith(distDir)) {
+  const relativePath = pathname === "/" ? "index.html" : pathname.replace(/^\/+/, "");
+  const filePath = path.resolve(distDir, relativePath);
+
+  if (!isPathInside(filePath, distDir)) {
     res.writeHead(403).end();
     return;
   }
@@ -96,4 +104,9 @@ function isAuthConfigRequest(req: http.IncomingMessage) {
 function cleanPassword(password?: string) {
   const cleaned = password?.trim();
   return cleaned || undefined;
+}
+
+function isPathInside(filePath: string, parentDir: string) {
+  const relative = path.relative(parentDir, filePath);
+  return relative === "" || (!relative.startsWith("..") && !path.isAbsolute(relative));
 }
